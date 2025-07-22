@@ -7,8 +7,7 @@ import {
   History, 
   TrendingUp, 
   CheckCircle,
-  Clock,
-  AlertCircle
+  Clock
 } from "lucide-react"
 import Link from "next/link"
 

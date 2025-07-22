@@ -24,7 +24,7 @@ interface AnalysisState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       isAuthenticated: false,
       isLoading: false,
@@ -51,8 +51,8 @@ export const useAuthStore = create<AuthState>()(
           } else {
             set({ user: null, isAuthenticated: false })
           }
-        } catch (error) {
-          console.error('初始化认证状态错误:', error)
+        } catch {
+          console.error('初始化认证状态错误')
           set({ user: null, isAuthenticated: false })
         } finally {
           set({ isLoading: false })

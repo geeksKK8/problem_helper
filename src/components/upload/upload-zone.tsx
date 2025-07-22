@@ -2,11 +2,12 @@
 
 import { useState, useCallback } from "react"
 import { useDropzone } from "react-dropzone"
+import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, X, FileImage } from "lucide-react"
+import { Upload, X } from "lucide-react"
 
 interface UploadZoneProps {
   onFileSelect: (file: File) => void
@@ -29,7 +30,7 @@ export function UploadZone({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   const onDrop = useCallback(
-    async (acceptedFiles: File[], rejectedFiles: any[]) => {
+    async (acceptedFiles: File[], rejectedFiles: unknown[]) => {
       setError(null)
       
       if (rejectedFiles.length > 0) {
@@ -64,7 +65,7 @@ export function UploadZone({
 
         await onUpload(file)
         setProgress(100)
-      } catch (err) {
+      } catch {
         setError("上传失败，请重试")
       } finally {
         setUploading(false)
@@ -144,9 +145,11 @@ export function UploadZone({
           </CardHeader>
           <CardContent>
             <div className="relative">
-              <img
+              <Image
                 src={previewUrl}
                 alt="预览"
+                width={400}
+                height={192}
                 className="w-full h-48 object-contain rounded-lg border"
               />
               <Button

@@ -1,13 +1,54 @@
 import { GoogleGenAI, Type } from '@google/genai'
 import * as fs from 'node:fs'
 import fetch from 'node-fetch'
-import { join } from 'path'
+
+// ==============================================================================
+//  类型定义
+// ==============================================================================
+
+interface KnowledgeTreeNode {
+  id: string
+  title: string
+  isLeaf?: boolean
+  children?: KnowledgeTreeNode[]
+}
+
+interface KnowledgeTreeResponse {
+  data: KnowledgeTreeNode[]
+}
+
+interface ProblemItem {
+  questionId: string
+  questionArticle?: string
+}
+
+interface ProblemQueryResponse {
+  data: {
+    list: ProblemItem[]
+  }
+}
+
+interface AnalysisResult {
+  knowledgePoint: string
+  problems: Array<{
+    id: string
+    title: string
+    content: string
+    difficulty: 'easy' | 'medium' | 'hard'
+    tags: string[]
+    similarity: number
+    estimatedTime: number
+    source: string
+  }>
+  analysisId: string
+  status: 'completed' | 'failed'
+}
 
 // ==============================================================================
 //  配置和工具函数
 // ==============================================================================
 
-function configureApiKey() {
+function configureApiKey(): string {
   const apiKey = process.env.GOOGLE_API_KEY
   if (!apiKey) {
     throw new Error('GOOGLE_API_KEY 环境变量未设置')
@@ -40,7 +81,7 @@ function extractProblemContent(htmlContent: string): string {
 //  知识点树相关函数
 // ==============================================================================
 
-export async function fetchKnowledgeTree(studyPhase = "300", subject = "2") {
+export async function fetchKnowledgeTree(studyPhase = "300", subject = "2"): Promise<KnowledgeTreeResponse> {
   const url = "https://qms.stzy.com/matrix/zw-zzw/api/v1/zzw/tree/kpoint"
   const headers = {
     'Accept': 'application/json, text/plain, */*',
@@ -64,18 +105,18 @@ export async function fetchKnowledgeTree(studyPhase = "300", subject = "2") {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
     
-    return await response.json()
+    return await response.json() as KnowledgeTreeResponse
   } catch (error) {
     console.error('获取知识点树失败:', error)
     throw error
   }
 }
 
-export function processKnowledgeTree(jsonData: any) {
+export function processKnowledgeTree(jsonData: KnowledgeTreeResponse): [string[], Record<string, string>] {
   const llmChoicesList: string[] = []
   const knowledgePointMap: Record<string, string> = {}
   
-  function flattenRecursive(nodes: any[], pathTitles: string[]) {
+  function flattenRecursive(nodes: KnowledgeTreeNode[], pathTitles: string[]): void {
     for (const node of nodes) {
       const currentTitle = node.title
       if (!currentTitle) continue
@@ -95,14 +136,14 @@ export function processKnowledgeTree(jsonData: any) {
   
   const rootNodes = jsonData.data || []
   flattenRecursive(rootNodes, [])
-  return [llmChoicesList, knowledgePointMap] as const
+  return [llmChoicesList, knowledgePointMap]
 }
 
 // ==============================================================================
 //  题目查询函数
 // ==============================================================================
 
-export async function queryStzyApi(knowledgePointId: string) {
+export async function queryStzyApi(knowledgePointId: string): Promise<ProblemQueryResponse> {
   const url = "https://qms.stzy.com/matrix/zw-search/api/v1/homeEs/question/keyPointQuery"
   const headers = {
     'Accept': 'application/json, text/plain, */*',
@@ -147,7 +188,7 @@ export async function queryStzyApi(knowledgePointId: string) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
     
-    return await response.json()
+    return await response.json() as ProblemQueryResponse
   } catch (error) {
     console.error('题目查询失败:', error)
     throw error
@@ -158,7 +199,7 @@ export async function queryStzyApi(knowledgePointId: string) {
 //  AI分析函数
 // ==============================================================================
 
-export async function getKnowledgePointFromLLM(imagePath: string, knowledgePointChoices: string[]) {
+export async function getKnowledgePointFromLLM(imagePath: string, knowledgePointChoices: string[]): Promise<string | null> {
   try {
     const apiKey = configureApiKey()
     const ai = new GoogleGenAI({ apiKey })
@@ -206,7 +247,7 @@ export async function getKnowledgePointFromLLM(imagePath: string, knowledgePoint
     if (response.functionCalls && response.functionCalls.length > 0) {
       const functionCall = response.functionCalls[0]
       if (functionCall.name === "select_knowledge_point" && functionCall.args) {
-        const selectedPath = functionCall.args.knowledge_point_path
+        const selectedPath = functionCall.args.knowledge_point_path as string
         return selectedPath
       }
     }
@@ -219,13 +260,13 @@ export async function getKnowledgePointFromLLM(imagePath: string, knowledgePoint
   }
 }
 
-export async function rankProblemsWithLLM(imagePath: string, problemList: any[]) {
+export async function rankProblemsWithLLM(imagePath: string, problemList: ProblemItem[]): Promise<string[]> {
   try {
     if (!problemList || problemList.length < 3) {
-      return problemList.map((p: any) => p.questionId)
+      return problemList.map((p: ProblemItem) => p.questionId)
     }
 
-    const candidateIds = problemList.map((p: any) => p.questionId)
+    const candidateIds = problemList.map((p: ProblemItem) => p.questionId)
     let formattedProblems = ""
     for (const problem of problemList) {
       const problemId = problem.questionId || 'N/A'
@@ -290,7 +331,7 @@ export async function rankProblemsWithLLM(imagePath: string, problemList: any[])
     if (response.functionCalls && response.functionCalls.length > 0) {
       const functionCall = response.functionCalls[0]
       if (functionCall.name === "select_top_three_problems" && functionCall.args) {
-        const topIds = functionCall.args.top_three_ids
+        const topIds = functionCall.args.top_three_ids as string[]
         if (Array.isArray(topIds) && topIds.length === 3) {
           return topIds
         }
@@ -301,7 +342,7 @@ export async function rankProblemsWithLLM(imagePath: string, problemList: any[])
 
   } catch (error) {
     console.error('AI精选失败:', error)
-    return problemList.map((p: any) => p.questionId)
+    return problemList.map((p: ProblemItem) => p.questionId)
   }
 }
 
@@ -309,7 +350,7 @@ export async function rankProblemsWithLLM(imagePath: string, problemList: any[])
 //  主分析函数
 // ==============================================================================
 
-export async function analyzeImage(imagePath: string) {
+export async function analyzeImage(imagePath: string): Promise<AnalysisResult> {
   try {
     // 1. 获取知识点树
     const knowledgeTreeData = await fetchKnowledgeTree()
@@ -344,12 +385,12 @@ export async function analyzeImage(imagePath: string) {
     const top3ProblemIds = await rankProblemsWithLLM(imagePath, initialProblemList)
     
     // 5. 过滤出最终题目
-    const finalProblems = initialProblemList.filter((p: any) => 
+    const finalProblems = initialProblemList.filter((p: ProblemItem) => 
       top3ProblemIds.includes(p.questionId)
     )
 
     // 6. 转换为前端需要的格式，保留HTML格式并去除标题
-    const problems = finalProblems.map((problem: any) => ({
+    const problems = finalProblems.map((problem: ProblemItem) => ({
       id: problem.questionId,
       title: extractProblemContent(problem.questionArticle || '').substring(0, 50) + '...',
       content: extractProblemContent(problem.questionArticle || ''), // 去除标题，保留题目正文

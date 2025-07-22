@@ -53,9 +53,10 @@ export function LoginForm() {
       toast.success("登录成功！")
       // 跳转到仪表板
       router.push("/dashboard")
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error)
-      toast.error(error.message || "登录失败，请检查邮箱和密码")
+      const errorMessage = error instanceof Error ? error.message : "登录失败，请检查邮箱和密码"
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }

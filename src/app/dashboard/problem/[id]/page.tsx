@@ -1,7 +1,4 @@
-"use client"
-
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -14,13 +11,13 @@ import {
   Tag,
   ExternalLink
 } from "lucide-react"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
 import type { Problem } from "@/types"
 
 interface ProblemDetailPageProps {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 const difficultyColors = {
@@ -35,76 +32,36 @@ const difficultyLabels = {
   hard: '困难',
 }
 
-export default function ProblemDetailPage({ params }: ProblemDetailPageProps) {
-  const router = useRouter()
-  const [problem, setProblem] = useState<Problem | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    // 这里可以从API获取题目详情，现在使用模拟数据
-    const mockProblem: Problem = {
-      id: params.id,
-      title: "圆锥体积与最短距离问题",
-      content: `<p>5．已知在圆锥<i>SO</i>中，底面圆<i>O</i>的直径 $ AB=2 $ ，圆锥<i>SO</i>的体积为 $ \\dfrac { 2\\sqrt { 2 } } { 3 }{ \\rm{ π } } $ ，点<i>M</i>在母线<i>SB</i>上，且 $ \\overrightarrow {{ SM }}=\\dfrac { 1 } { 3 }\\overrightarrow {{ SB }} $ ，一只蚂蚁若从<i>A</i>点出发，沿圆锥侧面爬行到达<i>M</i>点，则它爬行的最短距离为（&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;）</p><p><img src="https://cdn.stzy.com/zhizhi/Paper/0/2025/07/16/2/1/0/0/0/600479939335335940/images/img_4.png" style="vertical-align:middle;" width="148" alt="试题资源网 https://stzy.com"></p><p>A． $ \\sqrt { 7 } $ B． $ \\sqrt { 13 } $ C． $ \\sqrt { 19 } $ D． $ 3\\sqrt { 3 } $ </p>`,
-      difficulty: "hard",
-      tags: ["圆锥", "体积", "最短距离", "向量"],
-      similarity: 95,
-      estimatedTime: 15,
-      source: "题库"
-    }
-
-    setProblem(mockProblem)
-    setLoading(false)
-  }, [params.id])
-
-  const handleSave = () => {
-    setSaved(!saved)
-    // 这里可以调用API保存题目
+export default async function ProblemDetailPage({ params }: ProblemDetailPageProps) {
+  const resolvedParams = await params
+  
+  // 这里可以从API获取题目详情，现在使用模拟数据
+  const problem: Problem = {
+    id: resolvedParams.id,
+    title: "圆锥体积与最短距离问题",
+    content: `<p>5．已知在圆锥<i>SO</i>中，底面圆<i>O</i>的直径 $ AB=2 $ ，圆锥<i>SO</i>的体积为 $ \\dfrac { 2\\sqrt { 2 } } { 3 }{ \\rm{ π } } $ ，点<i>M</i>在母线<i>SB</i>上，且 $ \\overrightarrow {{ SM }}=\\dfrac { 1 } { 3 }\\overrightarrow {{ SB }} $ ，一只蚂蚁若从<i>A</i>点出发，沿圆锥侧面爬行到达<i>M</i>点，则它爬行的最短距离为（&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;）</p><p><img src="https://cdn.stzy.com/zhizhi/Paper/0/2025/07/16/2/1/0/0/0/600479939335335940/images/img_4.png" style="vertical-align:middle;" width="148" alt="试题资源网 https://stzy.com"></p><p>A． $ \\sqrt { 7 } $ B． $ \\sqrt { 13 } $ C． $ \\sqrt { 19 } $ D． $ 3\\sqrt { 3 } $ </p>`,
+    difficulty: "hard",
+    tags: ["圆锥", "体积", "最短距离", "向量"],
+    similarity: 95,
+    estimatedTime: 15,
+    source: "题库"
   }
 
-  const handleBack = () => {
-    router.back()
-  }
 
-  if (loading) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!problem) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-600">题目不存在</h2>
-          <Button onClick={handleBack} className="mt-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            返回
-          </Button>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* 页面头部 */}
       <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={handleBack}>
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          返回
-        </Button>
-        <Button onClick={handleSave} variant="outline">
-          <Bookmark className={`h-4 w-4 mr-2 ${saved ? 'fill-current' : ''}`} />
-          {saved ? '已保存' : '保存题目'}
+        <Link href="/dashboard" className="inline-flex items-center">
+          <Button variant="ghost">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            返回
+          </Button>
+        </Link>
+        <Button variant="outline">
+          <Bookmark className="h-4 w-4 mr-2" />
+          保存题目
         </Button>
       </div>
 

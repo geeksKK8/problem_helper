@@ -4,7 +4,7 @@ import { fetchKnowledgeTree, processKnowledgeTree } from '@/lib/ai'
 export async function GET() {
   try {
     const knowledgeTreeData = await fetchKnowledgeTree()
-    const [choicesForLLM, idLookupMap] = processKnowledgeTree(knowledgeTreeData)
+    const [choicesForLLM] = processKnowledgeTree(knowledgeTreeData)
     
     // 转换为前端需要的格式
     const knowledgePoints = choicesForLLM.map((path, index) => ({

@@ -10,7 +10,6 @@ import {
   Upload, 
   Brain, 
   Target, 
-  CheckCircle,
   Bookmark,
   ExternalLink,
   Star,
@@ -66,14 +65,13 @@ export default function DemoPage() {
   const [currentStep, setCurrentStep] = useState<'upload' | 'analyzing' | 'complete'>('upload')
   const [progress, setProgress] = useState(0)
   const [showResults, setShowResults] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+
 
   const handleFileSelect = (file: File) => {
-    setSelectedFile(file)
     toast.success(`已选择文件: ${file.name}`)
   }
 
-  const handleUpload = async (file: File) => {
+  const handleUpload = async () => {
     setCurrentStep('analyzing')
     setProgress(0)
 

@@ -67,9 +67,10 @@ export function RegisterForm() {
       toast.success("注册成功！欢迎加入AI助手")
       // 跳转到仪表板
       router.push("/dashboard")
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error)
-      toast.error(error.message || "注册失败，请稍后重试")
+      const errorMessage = error instanceof Error ? error.message : "注册失败，请稍后重试"
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }

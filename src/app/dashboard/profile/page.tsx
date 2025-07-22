@@ -60,9 +60,10 @@ export default function ProfilePage() {
       setIsEditing(false)
       // 重新获取用户信息
       window.location.reload()
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error)
-      toast.error(error.message || "更新失败，请稍后重试")
+      const errorMessage = error instanceof Error ? error.message : "更新失败，请稍后重试"
+      toast.error(errorMessage)
     } finally {
       setIsLoading(false)
     }

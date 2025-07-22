@@ -4,11 +4,10 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Separator } from "@/components/ui/separator"
 import { UploadZone } from "@/components/upload/upload-zone"
 import { AnalysisProgress } from "@/components/analysis/analysis-progress"
 import { ProblemDisplay } from "@/components/problems/problem-display"
-import { useAnalysisStore } from "@/lib/store"
+
 import { apiClient } from "@/lib/api"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
@@ -22,10 +21,7 @@ export default function AnalyzePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [knowledgePoint, setKnowledgePoint] = useState<string>("")
   const [problems, setProblems] = useState<Problem[]>([])
-  const [analysisId, setAnalysisId] = useState<string>("")
 
-  const setAnalyzing = useAnalysisStore((state) => state.setAnalyzing)
-  const setStoreProgress = useAnalysisStore((state) => state.setProgress)
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file)
@@ -45,6 +41,10 @@ export default function AnalyzePage() {
         throw new Error(uploadResult.error || '上传失败')
       }
 
+      if (!uploadResult.data?.id) {
+        throw new Error('上传成功但未返回图片ID')
+      }
+
       setProgress(40)
       setMessage("AI正在分析图片...")
       
@@ -54,13 +54,16 @@ export default function AnalyzePage() {
         throw new Error(analysisResult.error || '分析失败')
       }
 
+      if (!analysisResult.data) {
+        throw new Error('分析成功但未返回数据')
+      }
+
       setProgress(100)
       setMessage("分析完成！")
 
       // 设置结果
       setKnowledgePoint(analysisResult.data.knowledgePoint)
       setProblems(analysisResult.data.problems)
-      setAnalysisId(analysisResult.data.analysisId)
 
       setCurrentStep('complete')
       toast.success("分析完成！")
@@ -79,7 +82,6 @@ export default function AnalyzePage() {
     setSelectedFile(null)
     setKnowledgePoint("")
     setProblems([])
-    setAnalysisId("")
   }
 
   const handleRetry = () => {

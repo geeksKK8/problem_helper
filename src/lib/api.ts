@@ -75,12 +75,12 @@ class ApiClient {
         },
         token: authData.token,
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('注册错误:', error)
       
       // 处理PocketBase错误
-      if (error.data) {
-        const errors = error.data
+      if (error && typeof error === 'object' && 'data' in error) {
+        const errors = (error as { data: Record<string, unknown> }).data
         if (errors.email) {
           throw new Error('邮箱已被使用')
         }
@@ -149,7 +149,14 @@ class ApiClient {
   }
 
   // 分析相关API
-  async uploadImage(file: File) {
+  async uploadImage(file: File): Promise<{
+    success: boolean
+    data?: {
+      id: string
+      url: string
+    }
+    error?: string
+  }> {
     const formData = new FormData()
     formData.append('image', file)
     
@@ -165,18 +172,54 @@ class ApiClient {
     return response.json()
   }
 
-  async analyzeImage(imageId: string) {
+  async analyzeImage(imageId: string): Promise<{
+    success: boolean
+    data?: {
+      knowledgePoint: string
+      problems: Array<{
+        id: string
+        title: string
+        content: string
+        difficulty: 'easy' | 'medium' | 'hard'
+        tags: string[]
+        similarity: number
+        estimatedTime: number
+        source: string
+      }>
+      analysisId: string
+    }
+    error?: string
+  }> {
     return this.request('/analysis', {
       method: 'POST',
       body: JSON.stringify({ imageId }),
     })
   }
 
-  async getKnowledgePoints() {
+  async getKnowledgePoints(): Promise<{
+    success: boolean
+    data?: Array<{
+      id: string
+      path: string
+      title: string
+      isLeaf: boolean
+    }>
+    error?: string
+  }> {
     return this.request('/knowledge-points')
   }
 
-  async getAnalysisHistory(page = 1, limit = 10) {
+  async getAnalysisHistory(page = 1, limit = 10): Promise<{
+    success: boolean
+    data?: Array<{
+      id: string
+      date: string
+      type: string
+      status: string
+      knowledgePoint: string
+    }>
+    error?: string
+  }> {
     return this.request(`/history?page=${page}&limit=${limit}`)
   }
 }
