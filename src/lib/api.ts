@@ -1,5 +1,6 @@
 import { pb, type PBUser } from './pocketbase'
 
+// API基础URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api'
 
 class ApiClient {
@@ -9,31 +10,46 @@ class ApiClient {
     this.baseUrl = baseUrl
   }
 
+  // 检查PocketBase连接状态
+  async checkPocketBaseConnection(): Promise<boolean> {
+    try {
+      await pb.health.check()
+      return true
+    } catch (error) {
+      console.error('PocketBase连接失败:', error)
+      return false
+    }
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`
-    const config: RequestInit = {
+    const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
       },
       ...options,
-    }
+    })
 
-    const response = await fetch(url, config)
-    
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`)
+      throw new Error(`API请求失败: ${response.statusText}`)
     }
 
     return response.json()
   }
 
-  // PocketBase认证相关
+  // 用户认证相关API
   async login(email: string, password: string): Promise<{ user: PBUser; token: string }> {
     try {
+      // 检查连接状态
+      const isConnected = await this.checkPocketBaseConnection()
+      if (!isConnected) {
+        throw new Error('无法连接到数据库服务器')
+      }
+
       const authData = await pb.collection('users').authWithPassword(email, password)
       
       if (!authData.record) {
@@ -53,12 +69,21 @@ class ApiClient {
       }
     } catch (error) {
       console.error('登录错误:', error)
+      if (error instanceof Error) {
+        throw new Error(error.message)
+      }
       throw new Error('邮箱或密码错误')
     }
   }
 
   async register(userData: { email: string; password: string; passwordConfirm: string; name: string }): Promise<{ user: PBUser; token: string }> {
     try {
+      // 检查连接状态
+      const isConnected = await this.checkPocketBaseConnection()
+      if (!isConnected) {
+        throw new Error('无法连接到数据库服务器')
+      }
+
       const record = await pb.collection('users').create(userData)
       
       // 注册成功后自动登录

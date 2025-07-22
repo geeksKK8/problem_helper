@@ -1,7 +1,7 @@
 import PocketBase from 'pocketbase'
 
-// PocketBase服务器URL
-const POCKETBASE_URL = process.env.NEXT_PUBLIC_POCKETBASE_URL || 'http://127.0.0.1:8090'
+// PocketBase服务器URL - 支持本地开发和Render部署
+const POCKETBASE_URL = process.env.NEXT_PUBLIC_POCKETBASE_URL || 'https://pocketbase-0-29-0.onrender.com'
 
 // 创建PocketBase客户端实例
 export const pb = new PocketBase(POCKETBASE_URL)
