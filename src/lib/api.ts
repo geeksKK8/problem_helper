@@ -1,7 +1,8 @@
 import { pb, type PBUser } from './pocketbase'
 
-// API基础URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api'
+// API基础URL - 支持自定义端口
+const PORT = process.env.PORT || '3000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || `http://localhost:${PORT}/api`
 
 class ApiClient {
   private baseUrl: string
