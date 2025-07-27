@@ -4,14 +4,26 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import { UploadZone } from "@/components/upload/upload-zone"
 import { AnalysisProgress } from "@/components/analysis/analysis-progress"
 import { ProblemDisplay } from "@/components/problems/problem-display"
 
+import KatexHtmlRenderer from "@/components/ui/katex-html-renderer"
+
 import { apiClient } from "@/lib/api"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
+import { CheckCircle } from "lucide-react"
 import type { Problem } from "@/types"
+
+// 解题步骤类型定义
+interface SolutionStep {
+  step: number
+  title: string
+  content: string
+  formula?: string
+}
 
 export default function AnalyzePage() {
   const router = useRouter()
@@ -20,6 +32,7 @@ export default function AnalyzePage() {
   const [message, setMessage] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [knowledgePoint, setKnowledgePoint] = useState<string>("")
+  const [solutionSteps, setSolutionSteps] = useState<SolutionStep[]>([])
   const [problems, setProblems] = useState<Problem[]>([])
 
 
@@ -63,6 +76,7 @@ export default function AnalyzePage() {
 
       // 设置结果
       setKnowledgePoint(analysisResult.data.knowledgePoint)
+      setSolutionSteps(analysisResult.data.solution || [])
       setProblems(analysisResult.data.problems)
 
       setCurrentStep('complete')
@@ -81,6 +95,7 @@ export default function AnalyzePage() {
     setMessage("")
     setSelectedFile(null)
     setKnowledgePoint("")
+    setSolutionSteps([])
     setProblems([])
   }
 
@@ -148,6 +163,62 @@ export default function AnalyzePage() {
               </Badge>
             </CardContent>
           </Card>
+
+          {/* 解题过程 */}
+          {solutionSteps && solutionSteps.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-primary" />
+                  解题过程
+                </CardTitle>
+                <CardDescription>
+                  AI分析生成的详细解题步骤
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {solutionSteps.map((step, index) => (
+                  <div key={step.step} className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
+                        {step.step}
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        {step.title}
+                      </h3>
+                    </div>
+                    
+                    <div className="ml-11 space-y-3">
+                      <div className="text-gray-700 leading-relaxed">
+                        <KatexHtmlRenderer 
+                          html={step.content}
+                          className="text-base"
+                        />
+                      </div>
+                      
+                      {step.formula && (
+                        <div className="bg-gray-50 p-4 rounded-lg border-l-4 border-primary">
+                          <div className="text-sm font-medium text-gray-600 mb-2">相关公式：</div>
+                          <div className="text-center">
+                            <KatexHtmlRenderer 
+                              html={`$$${step.formula}$$`}
+                              className="text-lg"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {index < solutionSteps.length - 1 && (
+                      <div className="ml-11">
+                        <Separator className="my-4" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {/* 推荐题目 */}
           <Card>

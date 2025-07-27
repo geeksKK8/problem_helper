@@ -28,8 +28,16 @@ interface ProblemQueryResponse {
   }
 }
 
+interface SolutionStep {
+  step: number
+  title: string
+  content: string
+  formula?: string
+}
+
 interface AnalysisResult {
   knowledgePoint: string
+  solution: SolutionStep[]
   problems: Array<{
     id: string
     title: string
@@ -346,6 +354,156 @@ export async function rankProblemsWithLLM(imagePath: string, problemList: Proble
   }
 }
 
+export async function generateSolutionSteps(imagePath: string): Promise<SolutionStep[]> {
+  try {
+    const apiKey = configureApiKey()
+    const ai = new GoogleGenAI({ apiKey })
+
+    const imageBytes = fs.readFileSync(imagePath)
+    const base64Image = imageBytes.toString('base64')
+    
+    const prompt = `
+请仔细分析图片中的数学题目，生成详细的解题过程。
+
+要求：
+1. 分析题目要求和已知条件
+2. 确定解题方法和思路
+3. 提供清晰的步骤标题
+4. 给出详细的解题说明
+5. 如果涉及重要公式，请用LaTeX格式表示（用$符号包围）
+6. 确保逻辑清晰，步骤完整
+
+请按以下格式返回3-6个主要解题步骤：
+
+步骤1: [标题]
+[详细说明]
+公式: $[LaTeX公式]$（如果有）
+
+步骤2: [标题]
+[详细说明]
+公式: $[LaTeX公式]$（如果有）
+
+...
+
+请确保格式严格按照上述要求，每个步骤都要有明确的标题和说明。
+    `
+    
+    const contents = [
+      {
+        inlineData: {
+          mimeType: "image/png",
+          data: base64Image,
+        },
+      },
+      { text: prompt }
+    ]
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: contents,
+    })
+    
+    const responseText = response.text?.trim()
+    if (!responseText) {
+      throw new Error('AI未返回有效的解题步骤')
+    }
+
+    // 解析AI回复文本，提取解题步骤
+    const steps = parseStepsFromText(responseText)
+    
+    if (steps.length === 0) {
+      throw new Error('无法解析AI返回的解题步骤')
+    }
+
+    return steps
+
+  } catch (error) {
+    console.error('解题过程生成失败:', error)
+    return [
+      {
+        step: 1,
+        title: "解题过程生成失败",
+        content: "系统遇到问题，无法生成解题步骤。请检查网络连接后重试。"
+      }
+    ]
+  }
+}
+
+// 解析AI回复文本，提取解题步骤
+function parseStepsFromText(text: string): SolutionStep[] {
+  const steps: SolutionStep[] = []
+  
+  // 按行分割文本
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+  
+  let currentStep: Partial<SolutionStep> | null = null
+  let stepNumber = 1
+  
+  for (const line of lines) {
+    // 检查是否是步骤标题行（以"步骤"开头）
+    const stepMatch = line.match(/^步骤\s*(\d+)\s*[:：]\s*(.+)$/i)
+    if (stepMatch) {
+      // 保存前一个步骤
+      if (currentStep && currentStep.title) {
+        steps.push({
+          step: currentStep.step || stepNumber - 1,
+          title: currentStep.title,
+          content: currentStep.content || '',
+          formula: currentStep.formula
+        })
+      }
+      
+      // 开始新步骤
+      currentStep = {
+        step: parseInt(stepMatch[1]) || stepNumber,
+        title: stepMatch[2],
+        content: '',
+        formula: undefined
+      }
+      stepNumber++
+    }
+    // 检查是否是公式行
+    else if (line.match(/^公式\s*[:：]/i)) {
+      if (currentStep) {
+        const formulaMatch = line.match(/^公式\s*[:：]\s*\$(.+)\$/)
+        if (formulaMatch) {
+          currentStep.formula = formulaMatch[1]
+        }
+      }
+    }
+    // 其他行作为内容
+    else if (currentStep) {
+      if (currentStep.content) {
+        currentStep.content += '\n' + line
+      } else {
+        currentStep.content = line
+      }
+    }
+  }
+  
+  // 保存最后一个步骤
+  if (currentStep && currentStep.title) {
+    steps.push({
+      step: currentStep.step || stepNumber,
+      title: currentStep.title,
+      content: currentStep.content || '',
+      formula: currentStep.formula
+    })
+  }
+  
+  // 如果解析失败，尝试简单的备选方案
+  if (steps.length === 0) {
+    // 简单地将整个文本作为一个步骤
+    steps.push({
+      step: 1,
+      title: "解题分析",
+      content: text
+    })
+  }
+  
+  return steps
+}
+
 // ==============================================================================
 //  主分析函数
 // ==============================================================================
@@ -367,7 +525,10 @@ export async function analyzeImage(imagePath: string): Promise<AnalysisResult> {
       throw new Error('AI未能识别出有效的知识点')
     }
 
-    // 3. 根据知识点查询题目
+    // 3. 生成解题过程
+    const solutionSteps = await generateSolutionSteps(imagePath)
+
+    // 4. 根据知识点查询题目
     const targetId = idLookupMap[selectedKnowledgePath]
     if (!targetId) {
       throw new Error(`在映射字典中找不到路径 '${selectedKnowledgePath}' 对应的ID`)
@@ -381,15 +542,15 @@ export async function analyzeImage(imagePath: string): Promise<AnalysisResult> {
 
     const initialProblemList = initialResults.data.list
 
-    // 4. AI精选题目
+    // 5. AI精选题目
     const top3ProblemIds = await rankProblemsWithLLM(imagePath, initialProblemList)
     
-    // 5. 过滤出最终题目
+    // 6. 过滤出最终题目
     const finalProblems = initialProblemList.filter((p: ProblemItem) => 
       top3ProblemIds.includes(p.questionId)
     )
 
-    // 6. 转换为前端需要的格式，保留HTML格式并去除标题
+    // 7. 转换为前端需要的格式，保留HTML格式并去除标题
     const problems = finalProblems.map((problem: ProblemItem) => ({
       id: problem.questionId,
       title: extractProblemContent(problem.questionArticle || '').substring(0, 50) + '...',
@@ -403,6 +564,7 @@ export async function analyzeImage(imagePath: string): Promise<AnalysisResult> {
 
     return {
       knowledgePoint: selectedKnowledgePath,
+      solution: solutionSteps,
       problems,
       analysisId: `analysis_${Date.now()}`,
       status: 'completed'

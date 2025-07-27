@@ -202,6 +202,12 @@ class ApiClient {
     success: boolean
     data?: {
       knowledgePoint: string
+      solution?: Array<{
+        step: number
+        title: string
+        content: string
+        formula?: string
+      }>
       problems: Array<{
         id: string
         title: string

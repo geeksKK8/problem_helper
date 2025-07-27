@@ -23,11 +23,19 @@ export interface AnalysisResult {
   userId: string
   imageUrl: string
   knowledgePoint: string
+  solution?: SolutionStep[]
   problems: Problem[]
   status: 'processing' | 'completed' | 'failed'
   similarity: number
   createdAt: Date
   updatedAt: Date
+}
+
+export interface SolutionStep {
+  step: number
+  title: string
+  content: string
+  formula?: string
 }
 
 export interface KnowledgePoint {
