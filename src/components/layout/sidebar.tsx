@@ -28,7 +28,7 @@ const navigation = [
   },
   {
     name: "个人资料",
-    href: "/profile",
+    href: "/dashboard/profile",
     icon: User,
   },
 ]

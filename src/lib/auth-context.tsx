@@ -13,9 +13,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { isLoading, initializeAuth } = useAuthStore()
 
   useEffect(() => {
-    // 在应用启动时初始化认证状态
-    initializeAuth()
-  }, [initializeAuth])
+
+    
+    // 延迟初始化，给persist中间件更多时间恢复状态
+    const timer = setTimeout(() => {
+      initializeAuth()
+    }, 100)
+
+    return () => clearTimeout(timer)
+  }, []) // ✅ 移除所有依赖项，只在组件挂载时执行一次
 
   return (
     <AuthContext.Provider value={{ isLoading }}>

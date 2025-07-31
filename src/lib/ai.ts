@@ -52,6 +52,14 @@ interface AnalysisResult {
   status: 'completed' | 'failed'
 }
 
+// 科目类型定义
+interface Subject {
+  studyPhaseCode: string
+  subjectCode: string
+  name: string
+  category: string
+}
+
 // ==============================================================================
 //  配置和工具函数
 // ==============================================================================
@@ -151,7 +159,7 @@ export function processKnowledgeTree(jsonData: KnowledgeTreeResponse): [string[]
 //  题目查询函数
 // ==============================================================================
 
-export async function queryStzyApi(knowledgePointId: string): Promise<ProblemQueryResponse> {
+export async function queryStzyApi(knowledgePointId: string, studyPhase = "300", subject = "2"): Promise<ProblemQueryResponse> {
   const url = "https://qms.stzy.com/matrix/zw-search/api/v1/homeEs/question/keyPointQuery"
   const headers = {
     'Accept': 'application/json, text/plain, */*',
@@ -167,8 +175,8 @@ export async function queryStzyApi(knowledgePointId: string): Promise<ProblemQue
     pageNum: 1,
     pageSize: 10,
     params: {
-      studyPhaseCode: "300",
-      subjectCode: "2",
+      studyPhaseCode: studyPhase,
+      subjectCode: subject,
       searchType: 2,
       sort: 0,
       yearCode: "",
@@ -207,14 +215,14 @@ export async function queryStzyApi(knowledgePointId: string): Promise<ProblemQue
 //  AI分析函数
 // ==============================================================================
 
-export async function getKnowledgePointFromLLM(imagePath: string, knowledgePointChoices: string[]): Promise<string | null> {
+export async function getKnowledgePointFromLLM(imagePath: string, knowledgePointChoices: string[], subject?: Subject): Promise<string | null> {
   try {
     const apiKey = configureApiKey()
     const ai = new GoogleGenAI({ apiKey })
     
     const selectTool = {
       name: "select_knowledge_point",
-      description: "根据数学问题，选择一个最相关的知识点",
+      description: "根据题目，选择一个最相关的知识点",
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -234,7 +242,34 @@ export async function getKnowledgePointFromLLM(imagePath: string, knowledgePoint
     const imageBytes = fs.readFileSync(imagePath)
     const base64Image = imageBytes.toString('base64')
     
-    const prompt = "请仔细理解图中的数学问题，然后调用`select_knowledge_point`工具，选择和该问题最相关的一个知识点路径。"
+    // 根据科目生成专门的prompt
+    const getSubjectSpecificPrompt = (subject?: Subject): string => {
+      const basePrompt = "请仔细理解图中的题目，然后调用`select_knowledge_point`工具，选择和该题目最相关的一个知识点路径。"
+      
+      if (!subject) {
+        return basePrompt
+      }
+
+      const subjectSpecificGuidance: Record<string, string> = {
+        "数学": "请分析题目中涉及的数学概念、公式和解题方法，选择最核心的数学知识点。",
+        "物理": "请分析题目中涉及的物理现象、定律和原理，选择最相关的物理知识点。",
+        "化学": "请分析题目中涉及的化学反应、化学原理和化学概念，选择最相关的化学知识点。",
+        "语文": "请分析文本的内容、体裁、修辞手法和文学特征，选择最相关的语文知识点。",
+        "英语": "请分析题目的语法结构、词汇用法和语言技能要求，选择最相关的英语知识点。",
+        "历史": "请分析题目涉及的历史时期、历史事件和历史人物，选择最相关的历史知识点。",
+        "地理": "请分析题目涉及的地理要素、地理现象和空间关系，选择最相关的地理知识点。",
+        "政治": "请分析题目涉及的政治理论、制度特点和社会问题，选择最相关的政治知识点。",
+        "生物": "请分析题目涉及的生物结构、生理过程和生物原理，选择最相关的生物知识点。",
+        "道德与法治": "请分析题目涉及的法律知识、道德原则和社会责任，选择最相关的知识点。",
+        "科学": "请分析题目涉及的科学现象、科学原理和实验方法，选择最相关的科学知识点。"
+      }
+
+      const guidance = subjectSpecificGuidance[subject.name] || basePrompt
+      
+      return `${basePrompt}\n\n当前科目：${subject.category}${subject.name}\n${guidance}`
+    }
+    
+    const prompt = getSubjectSpecificPrompt(subject)
     
     const contents = [
       {
@@ -354,7 +389,7 @@ export async function rankProblemsWithLLM(imagePath: string, problemList: Proble
   }
 }
 
-export async function generateSolutionSteps(imagePath: string): Promise<SolutionStep[]> {
+export async function generateSolutionSteps(imagePath: string, subject?: Subject): Promise<SolutionStep[]> {
   try {
     const apiKey = configureApiKey()
     const ai = new GoogleGenAI({ apiKey })
@@ -362,8 +397,9 @@ export async function generateSolutionSteps(imagePath: string): Promise<Solution
     const imageBytes = fs.readFileSync(imagePath)
     const base64Image = imageBytes.toString('base64')
     
-    const prompt = `
-请仔细分析图片中的数学题目，生成详细的解题过程。
+    // 根据科目生成专门的prompt
+    const getSubjectSpecificPrompt = (subject?: Subject): string => {
+      const basePrompt = `请仔细分析图片中的题目，生成详细的解题过程。
 
 要求：
 1. 分析题目要求和已知条件
@@ -385,8 +421,103 @@ export async function generateSolutionSteps(imagePath: string): Promise<Solution
 
 ...
 
-请确保格式严格按照上述要求，每个步骤都要有明确的标题和说明。
-    `
+请确保格式严格按照上述要求，每个步骤都要有明确的标题和说明。`
+
+      if (!subject) {
+        return basePrompt
+      }
+
+      // 根据不同科目添加专门的指导
+      const subjectSpecificGuidance: Record<string, string> = {
+        "数学": `
+特别注意：
+- 明确标注每个数学概念和公式
+- 详细说明计算过程中的每一步
+- 如果是几何题，请描述图形特征和关系
+- 如果是代数题，请说明变量含义和方程建立过程`,
+        
+        "物理": `
+特别注意：
+- 明确物理概念和定律的应用
+- 标注所有物理量的单位
+- 画出必要的受力图或过程图
+- 说明物理原理和现象背后的机制`,
+        
+        "化学": `
+特别注意：
+- 写出完整的化学方程式
+- 说明反应机理和条件
+- 标注原子结构和电子配置（如适用）
+- 解释化学现象的本质原因`,
+        
+        "语文": `
+特别注意：
+- 分析文本结构和修辞手法
+- 解释词语含义和语境作用
+- 阐述主题思想和情感表达
+- 结合文化背景和时代特点`,
+        
+        "英语": `
+特别注意：
+- 分析语法结构和语言特点
+- 解释词汇用法和搭配
+- 说明语言表达的技巧和效果
+- 注意时态、语态和句型变化`,
+        
+        "历史": `
+特别注意：
+- 分析历史事件的时间、地点、人物
+- 说明历史背景和社会条件
+- 解释因果关系和历史意义
+- 联系相关的历史知识点`,
+        
+        "地理": `
+特别注意：
+- 分析地理要素和空间关系
+- 说明地理现象的形成原因
+- 结合地图和数据进行分析
+- 解释人地关系和环境影响`,
+        
+        "政治": `
+特别注意：
+- 运用政治理论和概念分析
+- 结合时事和现实问题
+- 说明制度特点和运行机制
+- 体现价值判断和思想认识`,
+        
+        "生物": `
+特别注意：
+- 分析生物结构和功能关系
+- 说明生理过程和机制
+- 运用生物学概念和原理
+- 结合实验和观察数据`,
+        
+        "道德与法治": `
+特别注意：
+- 运用法律知识和道德原则
+- 分析社会现象和问题
+- 说明权利义务和责任担当
+- 体现正确的价值观念`,
+        
+        "科学": `
+特别注意：
+- 运用科学方法和思维
+- 分析科学现象和规律
+- 说明实验过程和原理
+- 结合生活实际和应用实例`
+      }
+
+      const subjectGuidance = subjectSpecificGuidance[subject.name] || ""
+      
+      return `${basePrompt}
+
+${subjectGuidance}
+
+当前科目：${subject.category}${subject.name}
+请特别关注该科目的特点和要求进行分析。`
+    }
+    
+    const prompt = getSubjectSpecificPrompt(subject)
     
     const contents = [
       {
@@ -508,10 +639,14 @@ function parseStepsFromText(text: string): SolutionStep[] {
 //  主分析函数
 // ==============================================================================
 
-export async function analyzeImage(imagePath: string): Promise<AnalysisResult> {
+export async function analyzeImage(imagePath: string, subject?: Subject): Promise<AnalysisResult> {
   try {
+    // 设置默认值
+    const studyPhase = subject?.studyPhaseCode || "300"
+    const subjectCode = subject?.subjectCode || "2"
+
     // 1. 获取知识点树
-    const knowledgeTreeData = await fetchKnowledgeTree()
+    const knowledgeTreeData = await fetchKnowledgeTree(studyPhase, subjectCode)
     const [choicesForLLM, idLookupMap] = processKnowledgeTree(knowledgeTreeData)
     
     if (!choicesForLLM || choicesForLLM.length === 0) {
@@ -519,14 +654,14 @@ export async function analyzeImage(imagePath: string): Promise<AnalysisResult> {
     }
 
     // 2. 使用AI分析图片，选择知识点
-    const selectedKnowledgePath = await getKnowledgePointFromLLM(imagePath, choicesForLLM)
+    const selectedKnowledgePath = await getKnowledgePointFromLLM(imagePath, choicesForLLM, subject)
     
     if (!selectedKnowledgePath) {
       throw new Error('AI未能识别出有效的知识点')
     }
 
-    // 3. 生成解题过程
-    const solutionSteps = await generateSolutionSteps(imagePath)
+    // 3. 生成解题过程（传递科目信息）
+    const solutionSteps = await generateSolutionSteps(imagePath, subject)
 
     // 4. 根据知识点查询题目
     const targetId = idLookupMap[selectedKnowledgePath]
@@ -534,7 +669,7 @@ export async function analyzeImage(imagePath: string): Promise<AnalysisResult> {
       throw new Error(`在映射字典中找不到路径 '${selectedKnowledgePath}' 对应的ID`)
     }
 
-    const initialResults = await queryStzyApi(targetId)
+    const initialResults = await queryStzyApi(targetId, studyPhase, subjectCode)
     
     if (!initialResults || !initialResults.data || !initialResults.data.list) {
       throw new Error('未能获取初步题目列表')
