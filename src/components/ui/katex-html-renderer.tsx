@@ -7,10 +7,45 @@ import 'katex/dist/katex.min.css'
 interface Props {
   html: string
   className?: string
+  preserveLineBreaks?: boolean
 }
 
-const KatexHtmlRenderer: React.FC<Props> = ({ html, className = "" }) => {
+// 内容处理函数，类似PDF生成中的processContent
+function processContent(content: string): string {
+  if (!content) return ''
+  
+  // 清理HTML标签但保留基本格式和换行，保留图片标签
+  let processed = content
+    .replace(/<script[^>]*>.*?<\/script>/gi, '') // 移除script标签
+    .replace(/<style[^>]*>.*?<\/style>/gi, '') // 移除style标签
+    .replace(/<br\s*\/?>/gi, '\n') // 将<br>标签转换为换行符
+    .replace(/<\/p>/gi, '\n') // 将</p>标签转换为换行符
+    .replace(/<p[^>]*>/gi, '') // 移除<p>开始标签
+    .replace(/<div[^>]*>/gi, '') // 移除<div>开始标签
+    .replace(/<\/div>/gi, '\n') // 将</div>标签转换为换行符
+    .replace(/<[^>]*>/g, (match) => {
+      // 保留img标签，移除其他标签
+      if (match.toLowerCase().startsWith('<img')) {
+        return match
+      }
+      return ''
+    })
+    .replace(/&nbsp;/g, ' ') // 替换空格实体
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/\n\s*\n/g, '\n') // 合并多个连续换行
+    .replace(/^\s+|\s+$/g, '') // 去除首尾空白
+    .replace(/\n/g, '<br>') // 将换行符转换为HTML换行标签
+  
+  return processed
+}
+
+const KatexHtmlRenderer: React.FC<Props> = ({ html, className = "", preserveLineBreaks = false }) => {
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // 处理HTML内容
+  const processedHtml = preserveLineBreaks ? processContent(html) : html
 
   useEffect(() => {
     const el = containerRef.current
@@ -72,13 +107,13 @@ const KatexHtmlRenderer: React.FC<Props> = ({ html, className = "" }) => {
     }, 0)
 
     return () => clearTimeout(timer)
-  }, [html])
+  }, [processedHtml])
 
   return (
     <div
       ref={containerRef}
       className={className}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: processedHtml }}
     />
   )
 }

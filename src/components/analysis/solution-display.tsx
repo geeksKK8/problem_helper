@@ -74,6 +74,7 @@ export function SolutionDisplay({ solutionSteps, knowledgePoint }: SolutionDispl
                 <KatexHtmlRenderer 
                   html={step.content}
                   className="text-base"
+                  preserveLineBreaks={true}
                 />
               </div>
               
@@ -84,6 +85,7 @@ export function SolutionDisplay({ solutionSteps, knowledgePoint }: SolutionDispl
                     <KatexHtmlRenderer 
                       html={`$$${step.formula}$$`}
                       className="text-lg"
+                      preserveLineBreaks={true}
                     />
                   </div>
                 </div>

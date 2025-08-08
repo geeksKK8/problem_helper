@@ -566,6 +566,23 @@ class ApiClient {
       }
     }
   }
+
+  // PDF生成相关API
+  async downloadPDF(historyId: string, recordData: Record<string, unknown>): Promise<Blob> {
+    const response = await fetch(`${this.baseUrl}/pdf`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ historyId, recordData }),
+    })
+    
+    if (!response.ok) {
+      throw new Error(`PDF下载失败: ${response.statusText}`)
+    }
+    
+    return response.blob()
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL) 

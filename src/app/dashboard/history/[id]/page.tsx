@@ -1,16 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ArrowLeft, Clock, CheckCircle, XCircle, Download, Eye } from "lucide-react"
+import { ArrowLeft, Clock, CheckCircle, XCircle, Download, Eye, FileText } from "lucide-react"
 import { apiClient } from "@/lib/api"
 import KatexHtmlRenderer from "@/components/ui/katex-html-renderer"
 import { AnalysisResultDisplay } from "@/components/analysis/analysis-result-display"
+import { toast } from "sonner"
 import type { HistoryRecord } from "@/types"
 
 const statusIcons = {
@@ -46,11 +47,14 @@ const difficultyLabels = {
 export default function HistoryDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [record, setRecord] = useState<HistoryRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false)
 
   const historyId = params.id as string
+  const isPDFMode = searchParams.get('pdf') === 'true'
 
   // 加载历史记录详情
   useEffect(() => {
@@ -121,6 +125,42 @@ export default function HistoryDetailPage() {
     router.push(`/dashboard/problem/${problemId}`)
   }
 
+  // 下载PDF
+  const handleDownloadPDF = async () => {
+    if (!record) {
+      toast.error('记录数据不存在')
+      return
+    }
+
+    try {
+      setIsDownloadingPDF(true)
+      toast.loading('正在生成PDF...', { id: 'pdf-download' })
+      
+      const blob = await apiClient.downloadPDF(historyId, record as unknown as Record<string, unknown>)
+      
+      // 创建下载链接
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.style.display = 'none'
+      a.href = url
+      a.download = `analysis-${historyId}-${record.originalImageName || 'report'}.pdf`
+      
+      document.body.appendChild(a)
+      a.click()
+      
+      // 清理
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+      
+      toast.success('PDF下载成功！', { id: 'pdf-download' })
+    } catch (error) {
+      console.error('PDF下载失败:', error)
+      toast.error(error instanceof Error ? error.message : 'PDF下载失败', { id: 'pdf-download' })
+    } finally {
+      setIsDownloadingPDF(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -178,14 +218,16 @@ export default function HistoryDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-pdf-content>
       {/* 页面头部 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={handleBack}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            返回列表
-          </Button>
+          {!isPDFMode && (
+            <Button variant="ghost" size="sm" onClick={handleBack}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              返回列表
+            </Button>
+          )}
           <div>
             <h1 className="text-2xl font-bold">分析详情</h1>
             <p className="text-muted-foreground">{record.originalImageName}</p>
@@ -199,6 +241,16 @@ export default function HistoryDetailPage() {
               {statusLabels[record.status]}
             </div>
           </Badge>
+          {!isPDFMode && (
+            <Button 
+              onClick={handleDownloadPDF}
+              disabled={isDownloadingPDF}
+              size="sm"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              {isDownloadingPDF ? '生成中...' : '下载PDF'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -220,12 +272,14 @@ export default function HistoryDetailPage() {
                   (e.target as HTMLImageElement).src = '/placeholder-image.png'
                 }}
               />
-              <div className="absolute top-2 right-2">
-                <Button size="sm" variant="secondary">
-                  <Download className="h-4 w-4 mr-1" />
-                  下载
-                </Button>
-              </div>
+              {!isPDFMode && (
+                <div className="absolute top-2 right-2">
+                  <Button size="sm" variant="secondary">
+                    <Download className="h-4 w-4 mr-1" />
+                    下载
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -279,7 +333,7 @@ export default function HistoryDetailPage() {
 
       {/* 解题步骤 */}
       {record.solution && record.solution.length > 0 && (
-        <Card>
+        <Card className="pdf-optimized">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-primary" />
@@ -291,7 +345,7 @@ export default function HistoryDetailPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             {record.solution.map((step, index) => (
-              <div key={step.step} className="space-y-3">
+              <div key={step.step} className="space-y-3 pdf-step">
                 <div className="flex items-center gap-3">
                   <div className="flex-shrink-0 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-medium">
                     {step.step}
@@ -306,6 +360,7 @@ export default function HistoryDetailPage() {
                     <KatexHtmlRenderer 
                       html={step.content}
                       className="text-base"
+                      preserveLineBreaks={true}
                     />
                   </div>
                   
@@ -316,6 +371,7 @@ export default function HistoryDetailPage() {
                         <KatexHtmlRenderer 
                           html={`$$${step.formula}$$`}
                           className="text-lg"
+                          preserveLineBreaks={true}
                         />
                       </div>
                     </div>
@@ -335,34 +391,77 @@ export default function HistoryDetailPage() {
 
       {/* 推荐题目 */}
       {record.problems && record.problems.length > 0 && (
-        <div className="space-y-4">
-          {record.problems.map((problem) => (
-            <div key={problem.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
-              <div className="space-y-2">
-                <div className="text-sm text-gray-600">
-                  <KatexHtmlRenderer 
-                    html={problem.content}
-                    className="text-sm"
-                  />
+        <Card className="pdf-optimized">
+          <CardHeader>
+            <CardTitle>推荐题目</CardTitle>
+            <CardDescription>基于当前题目推荐的相似题目</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {record.problems.map((problem) => (
+                <div key={problem.id} className="border rounded-lg p-4 pdf-problem">
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-600">
+                      <KatexHtmlRenderer 
+                        html={problem.content}
+                        className="text-sm"
+                        preserveLineBreaks={true}
+                      />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge className={difficultyColors[problem.difficulty]}>
+                        {difficultyLabels[problem.difficulty]}
+                      </Badge>
+                      <span className="text-sm text-gray-500">
+                        相似度: {formatSimilarity(problem.similarity)}
+                      </span>
+                      {problem.estimatedTime && (
+                        <span className="text-sm text-gray-500 flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          预计 {problem.estimatedTime} 分钟
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge className={difficultyColors[problem.difficulty]}>
-                    {difficultyLabels[problem.difficulty]}
-                  </Badge>
-                  <span className="text-sm text-gray-500">
-                    相似度: {formatSimilarity(problem.similarity)}
-                  </span>
-                  {problem.estimatedTime && (
-                    <span className="text-sm text-gray-500 flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      预计 {problem.estimatedTime} 分钟
-                    </span>
-                  )}
-                </div>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PDF专用样式 */}
+      {isPDFMode && (
+        <style jsx global>{`
+          .pdf-optimized {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          
+          .pdf-step {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          
+          .pdf-problem {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          
+          @media print {
+            .pdf-optimized {
+              page-break-inside: avoid;
+            }
+            
+            .pdf-step {
+              page-break-inside: avoid;
+            }
+            
+            .pdf-problem {
+              page-break-inside: avoid;
+            }
+          }
+        `}</style>
       )}
     </div>
   )

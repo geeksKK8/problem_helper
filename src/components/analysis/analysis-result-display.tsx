@@ -123,6 +123,7 @@ export function AnalysisResultDisplay({
                     <KatexHtmlRenderer 
                       html={step.content}
                       className="text-base"
+                      preserveLineBreaks={true}
                     />
                   </div>
                   
@@ -133,6 +134,7 @@ export function AnalysisResultDisplay({
                         <KatexHtmlRenderer 
                           html={`$$${step.formula}$$`}
                           className="text-lg"
+                          preserveLineBreaks={true}
                         />
                       </div>
                     </div>
@@ -160,6 +162,7 @@ export function AnalysisResultDisplay({
                   <KatexHtmlRenderer 
                     html={problem.content}
                     className="text-sm"
+                    preserveLineBreaks={true}
                   />
                 </div>
                 <div className="flex items-center gap-3">
