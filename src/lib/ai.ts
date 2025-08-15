@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai'
 import * as fs from 'node:fs'
 import fetch from 'node-fetch'
+import cosineSimilarity from 'compute-cosine-similarity'
 
 // ==============================================================================
 //  类型定义
@@ -212,17 +213,122 @@ export async function queryStzyApi(knowledgePointId: string, studyPhase = "300",
 }
 
 // ==============================================================================
+//  Embedding相关函数
+// ==============================================================================
+
+export async function getEmbeddings(texts: string[]): Promise<number[][]> {
+  const startTime = Date.now()
+  console.log(`    🔤 开始获取embedding，文本数量: ${texts.length}`)
+  
+  try {
+    const apiKey = configureApiKey()
+    const ai = new GoogleGenAI({ apiKey })
+    
+    const response = await ai.models.embedContent({
+      model: 'gemini-embedding-001',
+      contents: texts
+    })
+    
+    if (!response.embeddings) {
+      throw new Error('未获取到embedding结果')
+    }
+    
+    const result = response.embeddings.map(e => e.values || []).filter(values => values.length > 0)
+    const totalTime = Date.now() - startTime
+    console.log(`    ✅ embedding获取完成，耗时: ${totalTime}ms，返回 ${result.length} 个向量`)
+    
+    return result
+  } catch (error) {
+    const totalTime = Date.now() - startTime
+    console.error(`    ❌ 获取embedding失败，耗时: ${totalTime}ms`)
+    console.error('获取embedding失败:', error)
+    throw error
+  }
+}
+
+export async function rankProblemsWithEmbedding(
+  originalProblemText: string, 
+  problemList: ProblemItem[]
+): Promise<Array<{id: string, similarity: number}>> {
+  const startTime = Date.now()
+  console.log('  🧠 开始基于embedding进行相似度比较...')
+  
+  try {
+    if (!problemList || problemList.length < 3) {
+      const totalTime = Date.now() - startTime
+      console.log(`  ✅ 候选题目不足3个，直接返回，耗时: ${totalTime}ms`)
+      return problemList.map((p: ProblemItem) => ({ id: p.questionId, similarity: 0.85 }))
+    }
+
+    // 准备文本列表：原始题目 + 候选题目
+    const texts = [originalProblemText]
+    const candidateIds = problemList.map((p: ProblemItem) => p.questionId)
+    
+    for (const problem of problemList) {
+      const problemContent = cleanHtml(problem.questionArticle || '')
+      texts.push(problemContent)
+    }
+    
+    // 获取所有文本的embedding
+    const embeddings = await getEmbeddings(texts)
+    
+    if (embeddings.length !== texts.length) {
+      throw new Error('Embedding数量与文本数量不匹配')
+    }
+    
+    // 计算原始题目与每个候选题目的相似度
+    const originalEmbedding = embeddings[0]
+    const similarities: Array<{id: string, similarity: number}> = []
+    
+    for (let i = 1; i < embeddings.length; i++) {
+      const similarity = cosineSimilarity(originalEmbedding, embeddings[i])
+      if (similarity !== null) {
+        similarities.push({
+          id: candidateIds[i - 1],
+          similarity: similarity
+        })
+      }
+    }
+    
+    // 按相似度降序排序
+    similarities.sort((a, b) => b.similarity - a.similarity)
+    
+    // 返回前3个最相似的题目ID和相似度
+    const top3Results = similarities.slice(0, 3)
+    
+    const totalTime = Date.now() - startTime
+    console.log(`  ✅ 相似度比较完成，耗时: ${totalTime}ms`)
+    console.log('  📊 相似度排序结果:', similarities.map(item => ({
+      id: item.id,
+      similarity: item.similarity.toFixed(4)
+    })))
+    
+    return top3Results
+
+  } catch (error) {
+    const totalTime = Date.now() - startTime
+    console.error(`  ❌ 基于embedding的题目排序失败，耗时: ${totalTime}ms`)
+    console.error('基于embedding的题目排序失败:', error)
+    // 降级到返回前3个题目
+    return problemList.slice(0, 3).map((p: ProblemItem) => ({ id: p.questionId, similarity: 0.85 }))
+  }
+}
+
+// ==============================================================================
 //  AI分析函数
 // ==============================================================================
 
-export async function getKnowledgePointFromLLM(imagePath: string, knowledgePointChoices: string[], subject?: Subject): Promise<string | null> {
+export async function getKnowledgePointFromText(problemText: string, knowledgePointChoices: string[], subject?: Subject): Promise<string | null> {
+  const startTime = Date.now()
+  console.log('  🎯 开始基于文本选择知识点...')
+  
   try {
     const apiKey = configureApiKey()
     const ai = new GoogleGenAI({ apiKey })
     
     const selectTool = {
       name: "select_knowledge_point",
-      description: "根据题目，选择一个最相关的知识点",
+      description: "根据题目文本，选择一个最相关的知识点",
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -238,13 +344,13 @@ export async function getKnowledgePointFromLLM(imagePath: string, knowledgePoint
 
     const tools = [{ functionDeclarations: [selectTool] }]
     const config = { tools: tools }
-
-    const imageBytes = fs.readFileSync(imagePath)
-    const base64Image = imageBytes.toString('base64')
     
     // 根据科目生成专门的prompt
     const getSubjectSpecificPrompt = (subject?: Subject): string => {
-      const basePrompt = "请仔细理解图中的题目，然后调用`select_knowledge_point`工具，选择和该题目最相关的一个知识点路径。"
+      const basePrompt = `请仔细分析以下题目文本，然后调用\`select_knowledge_point\`工具，选择和该题目最相关的一个知识点路径。
+
+题目文本：
+${problemText}`
       
       if (!subject) {
         return basePrompt
@@ -272,12 +378,6 @@ export async function getKnowledgePointFromLLM(imagePath: string, knowledgePoint
     const prompt = getSubjectSpecificPrompt(subject)
     
     const contents = [
-      {
-        inlineData: {
-          mimeType: "image/png",
-          data: base64Image,
-        },
-      },
       { text: prompt }
     ]
     
@@ -291,13 +391,19 @@ export async function getKnowledgePointFromLLM(imagePath: string, knowledgePoint
       const functionCall = response.functionCalls[0]
       if (functionCall.name === "select_knowledge_point" && functionCall.args) {
         const selectedPath = functionCall.args.knowledge_point_path as string
+        const totalTime = Date.now() - startTime
+        console.log(`  ✅ 知识点选择完成，耗时: ${totalTime}ms，选择: ${selectedPath}`)
         return selectedPath
       }
     }
     
+    const totalTime = Date.now() - startTime
+    console.log(`  ⚠️ 知识点选择未返回结果，耗时: ${totalTime}ms`)
     return null
 
   } catch (error) {
+    const totalTime = Date.now() - startTime
+    console.error(`  ❌ 知识点选择失败，耗时: ${totalTime}ms`)
     console.error('AI分析失败:', error)
     throw error
   }
@@ -386,6 +492,236 @@ export async function rankProblemsWithLLM(imagePath: string, problemList: Proble
   } catch (error) {
     console.error('AI精选失败:', error)
     return problemList.map((p: ProblemItem) => p.questionId)
+  }
+}
+
+export async function extractProblemTextAndGenerateSolution(imagePath: string, subject?: Subject): Promise<{problemText: string, solutionSteps: SolutionStep[]}> {
+  const startTime = Date.now()
+  console.log('  📝 开始提取题目文本并生成解题过程...')
+  
+  try {
+    const apiKey = configureApiKey()
+    const ai = new GoogleGenAI({ apiKey })
+
+    const imageBytes = fs.readFileSync(imagePath)
+    const base64Image = imageBytes.toString('base64')
+    
+    // 根据科目生成专门的prompt
+    const getSubjectSpecificPrompt = (subject?: Subject): string => {
+      const basePrompt = `请仔细分析图片中的题目，完成以下两个任务：
+
+任务1：提取题目文本
+请提取出完整的题目文本内容，只返回题目文本，不要添加任何解释。
+
+任务2：生成解题过程
+请生成详细的解题过程，要求：
+1. 分析题目要求和已知条件
+2. 确定解题方法和思路
+3. 提供清晰的步骤标题
+4. 给出详细的解题说明
+5. 如果涉及重要公式，请用LaTeX格式表示（用$符号包围）
+6. 确保逻辑清晰，步骤完整
+
+请按以下格式返回：
+
+===题目文本===
+[提取的题目文本内容]
+
+===解题过程===
+步骤1: [标题]
+[详细说明]
+公式: $[LaTeX公式]$（如果有）
+
+步骤2: [标题]
+[详细说明]
+公式: $[LaTeX公式]$（如果有）
+
+...
+
+请确保格式严格按照上述要求，每个步骤都要有明确的标题和说明。`
+
+      if (!subject) {
+        return basePrompt
+      }
+
+      // 根据不同科目添加专门的指导
+      const subjectSpecificGuidance: Record<string, string> = {
+        "数学": `
+特别注意：
+- 明确标注每个数学概念和公式
+- 详细说明计算过程中的每一步
+- 如果是几何题，请描述图形特征和关系
+- 如果是代数题，请说明变量含义和方程建立过程`,
+        
+        "物理": `
+特别注意：
+- 明确物理概念和定律的应用
+- 标注所有物理量的单位
+- 画出必要的受力图或过程图
+- 说明物理原理和现象背后的机制`,
+        
+        "化学": `
+特别注意：
+- 写出完整的化学方程式
+- 说明反应机理和条件
+- 标注原子结构和电子配置（如适用）
+- 解释化学现象的本质原因`,
+        
+        "语文": `
+特别注意：
+- 分析文本结构和修辞手法
+- 解释词语含义和语境作用
+- 阐述主题思想和情感表达
+- 结合文化背景和时代特点`,
+        
+        "英语": `
+特别注意：
+- 分析语法结构和语言特点
+- 解释词汇用法和搭配
+- 说明语言表达的技巧和效果
+- 注意时态、语态和句型变化`,
+        
+        "历史": `
+特别注意：
+- 分析历史事件的时间、地点、人物
+- 说明历史背景和社会条件
+- 解释因果关系和历史意义
+- 联系相关的历史知识点`,
+        
+        "地理": `
+特别注意：
+- 分析地理要素和空间关系
+- 说明地理现象的形成原因
+- 结合地图和数据进行分析
+- 解释人地关系和环境影响`,
+        
+        "政治": `
+特别注意：
+- 运用政治理论和概念分析
+- 结合时事和现实问题
+- 说明制度特点和运行机制
+- 体现价值判断和思想认识`,
+        
+        "生物": `
+特别注意：
+- 分析生物结构和功能关系
+- 说明生理过程和机制
+- 运用生物学概念和原理
+- 结合实验和观察数据`,
+        
+        "道德与法治": `
+特别注意：
+- 运用法律知识和道德原则
+- 分析社会现象和问题
+- 说明权利义务和责任担当
+- 体现正确的价值观念`,
+        
+        "科学": `
+特别注意：
+- 运用科学方法和思维
+- 分析科学现象和规律
+- 说明实验过程和原理
+- 结合生活实际和应用实例`
+      }
+
+      const subjectGuidance = subjectSpecificGuidance[subject.name] || ""
+      
+      return `${basePrompt}
+
+${subjectGuidance}
+
+当前科目：${subject.category}${subject.name}
+请特别关注该科目的特点和要求进行分析。`
+    }
+    
+    const prompt = getSubjectSpecificPrompt(subject)
+    
+    const contents = [
+      {
+        inlineData: {
+          mimeType: "image/png",
+          data: base64Image,
+        },
+      },
+      { text: prompt }
+    ]
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: contents,
+    })
+    
+    const responseText = response.text?.trim()
+    if (!responseText) {
+      throw new Error('AI未返回有效的结果')
+    }
+
+    // 解析AI回复，提取题目文本和解题步骤
+    const result = parseProblemTextAndSolution(responseText)
+    
+    const totalTime = Date.now() - startTime
+    console.log(`  ✅ 题目文本提取和解题过程生成完成，耗时: ${totalTime}ms`)
+    
+    return result
+
+  } catch (error) {
+    const totalTime = Date.now() - startTime
+    console.error(`  ❌ 题目文本提取和解题过程生成失败，耗时: ${totalTime}ms`)
+    console.error('题目文本提取和解题过程生成失败:', error)
+    throw error
+  }
+}
+
+// 解析AI回复，提取题目文本和解题步骤
+function parseProblemTextAndSolution(text: string): {problemText: string, solutionSteps: SolutionStep[]} {
+  const lines = text.split('\n').map(line => line.trim())
+  
+  let problemText = ''
+  let solutionText = ''
+  let isInProblemSection = false
+  let isInSolutionSection = false
+  
+  for (const line of lines) {
+    if (line.includes('===题目文本===')) {
+      isInProblemSection = true
+      isInSolutionSection = false
+      continue
+    }
+    
+    if (line.includes('===解题过程===')) {
+      isInProblemSection = false
+      isInSolutionSection = true
+      continue
+    }
+    
+    if (isInProblemSection && line) {
+      problemText += line + '\n'
+    }
+    
+    if (isInSolutionSection && line) {
+      solutionText += line + '\n'
+    }
+  }
+  
+  // 清理文本
+  problemText = problemText.trim()
+  solutionText = solutionText.trim()
+  
+  // 如果解析失败，使用整个文本作为题目文本
+  if (!problemText) {
+    problemText = text
+  }
+  
+  // 解析解题步骤
+  const solutionSteps = parseStepsFromText(solutionText)
+  
+  return {
+    problemText,
+    solutionSteps: solutionSteps.length > 0 ? solutionSteps : [{
+      step: 1,
+      title: "解题分析",
+      content: solutionText || "无法解析解题步骤"
+    }]
   }
 }
 
@@ -640,36 +976,59 @@ function parseStepsFromText(text: string): SolutionStep[] {
 // ==============================================================================
 
 export async function analyzeImage(imagePath: string, subject?: Subject): Promise<AnalysisResult> {
+  const startTime = Date.now()
+  console.log('🚀 开始题目分析流程...')
+  
   try {
     // 设置默认值
     const studyPhase = subject?.studyPhaseCode || "300"
     const subjectCode = subject?.subjectCode || "2"
 
     // 1. 获取知识点树
+    const step1Start = Date.now()
+    console.log('📚 步骤1: 获取知识点树...')
     const knowledgeTreeData = await fetchKnowledgeTree(studyPhase, subjectCode)
     const [choicesForLLM, idLookupMap] = processKnowledgeTree(knowledgeTreeData)
+    const step1Time = Date.now() - step1Start
+    console.log(`✅ 步骤1完成，耗时: ${step1Time}ms，获取到 ${choicesForLLM.length} 个知识点`)
     
     if (!choicesForLLM || choicesForLLM.length === 0) {
       throw new Error('未能从知识点树中提取任何有效的叶子节点')
     }
 
-    // 2. 使用AI分析图片，选择知识点
-    const selectedKnowledgePath = await getKnowledgePointFromLLM(imagePath, choicesForLLM, subject)
+    // 2. 合并提取题目文本和生成解题过程（一次模型调用）
+    const step2Start = Date.now()
+    console.log('🤖 步骤2: 提取题目文本并生成解题过程...')
+    const { problemText, solutionSteps } = await extractProblemTextAndGenerateSolution(imagePath, subject)
+    const step2Time = Date.now() - step2Start
+    console.log(`✅ 步骤2完成，耗时: ${step2Time}ms，提取文本长度: ${problemText?.length || 0} 字符`)
+    
+    if (!problemText) {
+      throw new Error('未能提取到有效的题目文本')
+    }
+
+    // 3. 基于提取的题目文本选择知识点
+    const step3Start = Date.now()
+    console.log('🎯 步骤3: 基于文本选择知识点...')
+    const selectedKnowledgePath = await getKnowledgePointFromText(problemText, choicesForLLM, subject)
+    const step3Time = Date.now() - step3Start
+    console.log(`✅ 步骤3完成，耗时: ${step3Time}ms，选择知识点: ${selectedKnowledgePath}`)
     
     if (!selectedKnowledgePath) {
       throw new Error('AI未能识别出有效的知识点')
     }
 
-    // 3. 生成解题过程（传递科目信息）
-    const solutionSteps = await generateSolutionSteps(imagePath, subject)
-
     // 4. 根据知识点查询题目
+    const step4Start = Date.now()
+    console.log('🔍 步骤4: 根据知识点查询题目...')
     const targetId = idLookupMap[selectedKnowledgePath]
     if (!targetId) {
       throw new Error(`在映射字典中找不到路径 '${selectedKnowledgePath}' 对应的ID`)
     }
 
     const initialResults = await queryStzyApi(targetId, studyPhase, subjectCode)
+    const step4Time = Date.now() - step4Start
+    console.log(`✅ 步骤4完成，耗时: ${step4Time}ms，查询到 ${initialResults?.data?.list?.length || 0} 道候选题目`)
     
     if (!initialResults || !initialResults.data || !initialResults.data.list) {
       throw new Error('未能获取初步题目列表')
@@ -677,25 +1036,57 @@ export async function analyzeImage(imagePath: string, subject?: Subject): Promis
 
     const initialProblemList = initialResults.data.list
 
-    // 5. AI精选题目
-    const top3ProblemIds = await rankProblemsWithLLM(imagePath, initialProblemList)
+    // 5. 使用embedding进行语义相似度比较，精选题目
+    const step5Start = Date.now()
+    console.log('🧠 步骤5: 使用embedding进行相似度比较...')
+    const top3Results = await rankProblemsWithEmbedding(problemText, initialProblemList)
+    const step5Time = Date.now() - step5Start
+    console.log(`✅ 步骤5完成，耗时: ${step5Time}ms，精选出 ${top3Results.length} 道题目`)
     
-    // 6. 过滤出最终题目
+    // 6. 过滤出最终题目并创建相似度映射
+    const step6Start = Date.now()
+    console.log('📋 步骤6: 过滤最终题目...')
+    const top3Ids = top3Results.map(result => result.id)
+    const similarityMap = new Map(top3Results.map(result => [result.id, result.similarity]))
+    
     const finalProblems = initialProblemList.filter((p: ProblemItem) => 
-      top3ProblemIds.includes(p.questionId)
+      top3Ids.includes(p.questionId)
     )
+    const step6Time = Date.now() - step6Start
+    console.log(`✅ 步骤6完成，耗时: ${step6Time}ms，过滤出 ${finalProblems.length} 道题目`)
 
-    // 7. 转换为前端需要的格式，保留HTML格式并去除标题
-    const problems = finalProblems.map((problem: ProblemItem) => ({
-      id: problem.questionId,
-      title: extractProblemContent(problem.questionArticle || '').substring(0, 50) + '...',
-      content: extractProblemContent(problem.questionArticle || ''), // 去除标题，保留题目正文
-      difficulty: 'medium' as const, // 可以根据实际情况调整
-      tags: [selectedKnowledgePath.split(' -> ').pop() || ''],
-      similarity: Math.floor(Math.random() * 20) + 80, // 模拟相似度
-      estimatedTime: Math.floor(Math.random() * 10) + 10,
-      source: '题库'
-    }))
+    // 7. 转换为前端需要的格式（使用已有的相似度值）
+    const step7Start = Date.now()
+    console.log('📊 步骤7: 格式化结果...')
+    const problems = finalProblems.map((problem: ProblemItem) => {
+      // 使用第5步计算好的相似度值
+      const similarity = similarityMap.get(problem.questionId) || 0.85
+      
+      return {
+        id: problem.questionId,
+        title: extractProblemContent(problem.questionArticle || '').substring(0, 50) + '...',
+        content: extractProblemContent(problem.questionArticle || ''), // 去除标题，保留题目正文
+        difficulty: 'medium' as const, // 可以根据实际情况调整
+        tags: [selectedKnowledgePath.split(' -> ').pop() || ''],
+        similarity: Math.round(similarity * 100), // 转换为百分比
+        estimatedTime: Math.floor(Math.random() * 10) + 10,
+        source: '题库'
+      }
+    })
+    const step7Time = Date.now() - step7Start
+    console.log(`✅ 步骤7完成，耗时: ${step7Time}ms，生成了 ${problems.length} 道推荐题目`)
+
+    const totalTime = Date.now() - startTime
+    console.log('🎉 分析流程完成！')
+    console.log('📈 性能统计:')
+    console.log(`   总耗时: ${totalTime}ms`)
+    console.log(`   步骤1 (知识点树): ${step1Time}ms (${((step1Time/totalTime)*100).toFixed(1)}%)`)
+    console.log(`   步骤2 (文本提取+解题): ${step2Time}ms (${((step2Time/totalTime)*100).toFixed(1)}%)`)
+    console.log(`   步骤3 (知识点选择): ${step3Time}ms (${((step3Time/totalTime)*100).toFixed(1)}%)`)
+    console.log(`   步骤4 (题库查询): ${step4Time}ms (${((step4Time/totalTime)*100).toFixed(1)}%)`)
+    console.log(`   步骤5 (相似度比较): ${step5Time}ms (${((step5Time/totalTime)*100).toFixed(1)}%)`)
+    console.log(`   步骤6 (题目过滤): ${step6Time}ms (${((step6Time/totalTime)*100).toFixed(1)}%)`)
+    console.log(`   步骤7 (结果格式化): ${step7Time}ms (${((step7Time/totalTime)*100).toFixed(1)}%)`)
 
     return {
       knowledgePoint: selectedKnowledgePath,
@@ -706,6 +1097,8 @@ export async function analyzeImage(imagePath: string, subject?: Subject): Promis
     }
 
   } catch (error) {
+    const totalTime = Date.now() - startTime
+    console.error(`❌ 分析失败，总耗时: ${totalTime}ms`)
     console.error('分析失败:', error)
     throw error
   }
