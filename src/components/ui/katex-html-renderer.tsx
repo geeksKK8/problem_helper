@@ -15,7 +15,7 @@ function processContent(content: string): string {
   if (!content) return ''
   
   // 清理HTML标签但保留基本格式和换行，保留图片标签
-  let processed = content
+  const processed = content
     .replace(/<script[^>]*>.*?<\/script>/gi, '') // 移除script标签
     .replace(/<style[^>]*>.*?<\/style>/gi, '') // 移除style标签
     .replace(/<br\s*\/?>/gi, '\n') // 将<br>标签转换为换行符

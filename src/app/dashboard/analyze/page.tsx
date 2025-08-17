@@ -2,22 +2,20 @@
 
 import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { UploadZone } from "@/components/upload/upload-zone"
+import { BatchUploadZone } from "@/components/upload/batch-upload-zone"
 import { AnalysisProgress } from "@/components/analysis/analysis-progress"
-import { ProblemDisplay } from "@/components/problems/problem-display"
 import { AnalysisResultDisplay } from "@/components/analysis/analysis-result-display"
-
-import KatexHtmlRenderer from "@/components/ui/katex-html-renderer"
+import { BatchResultDisplay } from "@/components/analysis/batch-result-display"
 
 import { apiClient } from "@/lib/api"
 import { toast } from "sonner"
-import { useRouter } from "next/navigation"
-import { CheckCircle } from "lucide-react"
+
 import type { Problem } from "@/types"
 
 // 解题步骤类型定义
@@ -62,7 +60,6 @@ const SUBJECTS: Subject[] = [
 ]
 
 export default function AnalyzePage() {
-  const router = useRouter()
   const [currentStep, setCurrentStep] = useState<'upload' | 'analyzing' | 'selecting' | 'complete' | 'error'>('upload')
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState("")
@@ -72,6 +69,7 @@ export default function AnalyzePage() {
   const [knowledgePoint, setKnowledgePoint] = useState<string>("")
   const [solutionSteps, setSolutionSteps] = useState<SolutionStep[]>([])
   const [problems, setProblems] = useState<Problem[]>([])
+  const [batchResults, setBatchResults] = useState<Array<{ file: File; result: { knowledgePoint: string; problems: Problem[] }; subject: Subject }>>([])
 
 
   const handleFileSelect = (file: File) => {
@@ -160,13 +158,11 @@ export default function AnalyzePage() {
     }
   }
 
-  const handleViewProblem = (id: string) => {
-    // 导航到问题详情页面
-    router.push(`/dashboard/problem/${id}`)
-  }
 
-  const handleSaveProblem = (id: string) => {
-    toast.success(`已保存题目: ${id}`)
+
+  const handleBatchComplete = (results: Array<{ file: File; result: { knowledgePoint: string; problems: Problem[] }; subject: Subject }>) => {
+    setBatchResults(results)
+    toast.success(`批量分析完成！共处理 ${results.length} 个文件`)
   }
 
   return (
@@ -179,75 +175,97 @@ export default function AnalyzePage() {
         </p>
       </div>
 
-      {/* 科目选择器 */}
-      {currentStep === 'upload' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>选择科目</CardTitle>
-            <CardDescription>
-              请选择题目对应的科目，这将帮助AI更准确地分析和推荐相关题目
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="subject-select">科目</Label>
-              <Select 
-                value={`${selectedSubject.studyPhaseCode}-${selectedSubject.subjectCode}`}
-                onValueChange={(value) => {
-                  const [studyPhaseCode, subjectCode] = value.split('-')
-                  const subject = SUBJECTS.find(s => 
-                    s.studyPhaseCode === studyPhaseCode && s.subjectCode === subjectCode
-                  )
-                  if (subject) {
-                    setSelectedSubject(subject)
-                  }
-                }}
-              >
-                <SelectTrigger id="subject-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <div className="space-y-2">
-                    <div className="px-2 py-1 text-sm font-medium text-muted-foreground">初中</div>
-                    {SUBJECTS.filter(s => s.category === '初中').map((subject) => (
-                      <SelectItem 
-                        key={`${subject.studyPhaseCode}-${subject.subjectCode}`}
-                        value={`${subject.studyPhaseCode}-${subject.subjectCode}`}
-                      >
-                        {subject.name}
-                      </SelectItem>
-                    ))}
-                    <Separator />
-                    <div className="px-2 py-1 text-sm font-medium text-muted-foreground">高中</div>
-                    {SUBJECTS.filter(s => s.category === '高中').map((subject) => (
-                      <SelectItem 
-                        key={`${subject.studyPhaseCode}-${subject.subjectCode}`}
-                        value={`${subject.studyPhaseCode}-${subject.subjectCode}`}
-                      >
-                        {subject.name}
-                      </SelectItem>
-                    ))}
-                  </div>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                当前选择：{selectedSubject.category} - {selectedSubject.name}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* 分析模式选择 */}
+      <Tabs defaultValue="single" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="single">单文件分析</TabsTrigger>
+          <TabsTrigger value="batch">批量分析</TabsTrigger>
+        </TabsList>
 
-      {/* 上传区域 */}
-      {currentStep === 'upload' && (
-        <UploadZone
-          onFileSelect={handleFileSelect}
-          onUpload={handleUpload}
-          accept="image/*"
-          maxSize={10 * 1024 * 1024}
-          preview={true}
-        />
-      )}
+        {/* 单文件分析 */}
+        <TabsContent value="single" className="space-y-6">
+          {/* 科目选择器 */}
+          {currentStep === 'upload' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>选择科目</CardTitle>
+                <CardDescription>
+                  请选择题目对应的科目，这将帮助AI更准确地分析和推荐相关题目
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="subject-select">科目</Label>
+                  <Select 
+                    value={`${selectedSubject.studyPhaseCode}-${selectedSubject.subjectCode}`}
+                    onValueChange={(value) => {
+                      const [studyPhaseCode, subjectCode] = value.split('-')
+                      const subject = SUBJECTS.find(s => 
+                        s.studyPhaseCode === studyPhaseCode && s.subjectCode === subjectCode
+                      )
+                      if (subject) {
+                        setSelectedSubject(subject)
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="subject-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <div className="space-y-2">
+                        <div className="px-2 py-1 text-sm font-medium text-muted-foreground">初中</div>
+                        {SUBJECTS.filter(s => s.category === '初中').map((subject) => (
+                          <SelectItem 
+                            key={`${subject.studyPhaseCode}-${subject.subjectCode}`}
+                            value={`${subject.studyPhaseCode}-${subject.subjectCode}`}
+                          >
+                            {subject.name}
+                          </SelectItem>
+                        ))}
+                        <Separator />
+                        <div className="px-2 py-1 text-sm font-medium text-muted-foreground">高中</div>
+                        {SUBJECTS.filter(s => s.category === '高中').map((subject) => (
+                          <SelectItem 
+                            key={`${subject.studyPhaseCode}-${subject.subjectCode}`}
+                            value={`${subject.studyPhaseCode}-${subject.subjectCode}`}
+                          >
+                            {subject.name}
+                          </SelectItem>
+                        ))}
+                      </div>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    当前选择：{selectedSubject.category} - {selectedSubject.name}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 上传区域 */}
+          {currentStep === 'upload' && (
+            <UploadZone
+              onFileSelect={handleFileSelect}
+              onUpload={handleUpload}
+              accept="image/*"
+              maxSize={10 * 1024 * 1024}
+              preview={true}
+            />
+          )}
+        </TabsContent>
+
+        {/* 批量分析 */}
+        <TabsContent value="batch" className="space-y-6">
+          <BatchUploadZone
+            onBatchComplete={handleBatchComplete}
+            accept="image/*"
+            maxSize={10 * 1024 * 1024}
+            maxFiles={10}
+            subjects={SUBJECTS}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* 分析进度 */}
       {(currentStep === 'analyzing' || currentStep === 'selecting' || currentStep === 'error') && (
@@ -282,6 +300,18 @@ export default function AnalyzePage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* 批量分析结果 */}
+      {batchResults.length > 0 && (
+        <BatchResultDisplay
+          results={batchResults}
+          onClear={() => setBatchResults([])}
+          onExport={() => {
+            // TODO: 实现导出功能
+            console.log('导出批量分析结果')
+          }}
+        />
       )}
     </div>
   )
