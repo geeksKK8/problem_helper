@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useDropzone } from "react-dropzone"
 import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -43,6 +43,7 @@ interface FileItem {
       estimatedTime: number
       source: string
     }>
+    historyId?: string | null
   }
   error?: string
 }
@@ -57,11 +58,12 @@ interface BatchUploadZoneProps {
     similarity: number
     estimatedTime: number
     source: string
-  }> }; subject: Subject }>) => void
+  }>; historyId?: string | null }; subject: Subject }>) => void
   accept?: string
   maxSize?: number
   maxFiles?: number
   subjects: Subject[]
+  preloadedFiles?: File[] // 新增：预加载的文件
 }
 
 export function BatchUploadZone({
@@ -70,10 +72,27 @@ export function BatchUploadZone({
   maxSize = 10 * 1024 * 1024, // 10MB
   maxFiles = 10,
   subjects,
+  preloadedFiles = [],
 }: BatchUploadZoneProps) {
   const [files, setFiles] = useState<FileItem[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [overallProgress, setOverallProgress] = useState(0)
+
+  // 处理预加载的文件
+  useEffect(() => {
+    if (preloadedFiles.length > 0) {
+      const preloadedFileItems: FileItem[] = preloadedFiles.map((file, index) => ({
+        id: `preloaded-${Date.now()}-${index}`,
+        file,
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+        subject: subjects[11], // 默认选择高中数学
+        status: 'pending',
+        progress: 0,
+        message: "等待处理"
+      }))
+      setFiles(preloadedFileItems)
+    }
+  }, [preloadedFiles, subjects])
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -143,7 +162,7 @@ export function BatchUploadZone({
       similarity: number
       estimatedTime: number
       source: string
-    }> }; subject: Subject }> = []
+    }>; historyId?: string | null }; subject: Subject }> = []
 
     for (let i = 0; i < pendingFiles.length; i += batchSize) {
       const batch = pendingFiles.slice(i, i + batchSize)
@@ -182,8 +201,9 @@ export function BatchUploadZone({
           updateFileStatus(fileItem.id, { progress: 100, message: "分析完成" })
 
           // 保存分析历史到数据库
+          let historyId: string | null = null
           try {
-            await apiClient.saveAnalysisHistory({
+            const saveResult = await apiClient.saveAnalysisHistory({
               imageUrl: uploadResult.data.imageUrl,
               originalImageName: fileItem.file.name,
               knowledgePoint: analysisResult.data.knowledgePoint,
@@ -191,6 +211,10 @@ export function BatchUploadZone({
               problems: analysisResult.data.problems,
               status: 'completed'
             })
+            
+            if (saveResult.success && saveResult.data) {
+              historyId = saveResult.data.id
+            }
           } catch (saveError) {
             console.error('保存分析历史失败:', saveError)
             // 不影响主流程，只记录错误
@@ -200,7 +224,8 @@ export function BatchUploadZone({
             status: 'completed', 
             result: {
               knowledgePoint: analysisResult.data.knowledgePoint,
-              problems: analysisResult.data.problems
+              problems: analysisResult.data.problems,
+              historyId: historyId
             }
           })
 
@@ -208,7 +233,8 @@ export function BatchUploadZone({
             file: fileItem.file,
             result: {
               knowledgePoint: analysisResult.data.knowledgePoint,
-              problems: analysisResult.data.problems
+              problems: analysisResult.data.problems,
+              historyId: historyId
             },
             subject: fileItem.subject
           })
@@ -281,7 +307,10 @@ export function BatchUploadZone({
         <CardHeader>
           <CardTitle>批量上传题目图片</CardTitle>
           <CardDescription>
-            支持同时上传多张题目图片进行批量分析，最多{maxFiles}张图片
+            {preloadedFiles.length > 0 
+              ? `已加载 ${preloadedFiles.length} 张预处理图片，可继续添加更多图片进行批量分析`
+              : `支持同时上传多张题目图片进行批量分析，最多${maxFiles}张图片`
+            }
           </CardDescription>
         </CardHeader>
         <CardContent>

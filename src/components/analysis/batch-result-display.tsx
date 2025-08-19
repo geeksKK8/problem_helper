@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +15,7 @@ interface BatchResult {
   result: {
     knowledgePoint: string
     problems: Problem[]
+    historyId?: string | null
   }
   subject: {
     studyPhaseCode: string
@@ -30,6 +32,7 @@ interface BatchResultDisplayProps {
 }
 
 export function BatchResultDisplay({ results, onClear, onExport }: BatchResultDisplayProps) {
+  const router = useRouter()
   const [expandedResults, setExpandedResults] = useState<Set<number>>(new Set())
 
   const toggleExpanded = (index: number) => {
@@ -40,6 +43,12 @@ export function BatchResultDisplay({ results, onClear, onExport }: BatchResultDi
       newExpanded.add(index)
     }
     setExpandedResults(newExpanded)
+  }
+
+  const handleViewDetails = (result: BatchResult) => {
+    if (result.result.historyId) {
+      router.push(`/dashboard/history/${result.result.historyId}`)
+    }
   }
 
   const handleSaveResult = (result: BatchResult) => {
@@ -84,17 +93,26 @@ export function BatchResultDisplay({ results, onClear, onExport }: BatchResultDi
                     <Button 
                       size="sm" 
                       variant="outline"
+                      onClick={() => handleViewDetails(result)}
+                      disabled={!result.result.historyId}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      查看详情
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
                       onClick={() => toggleExpanded(index)}
                     >
                       {expandedResults.has(index) ? (
                         <>
                           <ChevronUp className="h-4 w-4 mr-1" />
-                          收起详情
+                          收起预览
                         </>
                       ) : (
                         <>
                           <Eye className="h-4 w-4 mr-1" />
-                          查看详情
+                          展开预览
                         </>
                       )}
                     </Button>
