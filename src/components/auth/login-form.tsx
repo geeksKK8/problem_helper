@@ -46,18 +46,54 @@ export function LoginForm() {
   })
 
   async function onSubmit(values: z.infer<typeof loginSchema>) {
+    console.log('🔍 登录表单提交开始...')
+    console.log('  - 提交时间:', new Date().toISOString())
+    console.log('  - 表单数据:', {
+      email: values.email,
+      passwordLength: values.password.length,
+      remember: values.remember
+    })
+    console.log('  - 环境变量检查:')
+    console.log('    - NEXT_PUBLIC_POCKETBASE_URL:', process.env.NEXT_PUBLIC_POCKETBASE_URL)
+    console.log('    - NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
+    console.log('    - NODE_ENV:', process.env.NODE_ENV)
+    
     setIsLoading(true)
     try {
+      console.log('🔍 调用API客户端登录方法...')
       const response = await apiClient.login(values.email, values.password)
+      
+      console.log('✅ API登录成功:')
+      console.log('  - 成功时间:', new Date().toISOString())
+      console.log('  - 用户ID:', response.user.id)
+      console.log('  - 用户邮箱:', response.user.email)
+      console.log('  - Token存在:', !!response.user.id)
+      
+      console.log('🔍 调用store登录方法...')
       login(response.user)
+      
+      console.log('✅ Store登录成功，显示成功提示...')
       toast.success("登录成功！")
+      
+      console.log('🔍 跳转到仪表板...')
       // 跳转到仪表板
       router.push("/dashboard")
     } catch (error: unknown) {
-      console.error(error)
+      console.error('❌ 登录表单处理失败:')
+      console.error('  - 失败时间:', new Date().toISOString())
+      console.error('  - 错误类型:', error instanceof Error ? error.constructor?.name : typeof error)
+      console.error('  - 错误消息:', error instanceof Error ? error.message : String(error))
+      console.error('  - 错误详情:', error)
+      console.error('  - 当前环境变量:')
+      console.error('    - NEXT_PUBLIC_POCKETBASE_URL:', process.env.NEXT_PUBLIC_POCKETBASE_URL)
+      console.error('    - NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
+      console.error('    - NODE_ENV:', process.env.NODE_ENV)
+      
       const errorMessage = error instanceof Error ? error.message : "登录失败，请检查邮箱和密码"
+      console.error('  - 显示给用户的错误消息:', errorMessage)
       toast.error(errorMessage)
     } finally {
+      console.log('🔍 登录流程结束，重置加载状态')
       setIsLoading(false)
     }
   }

@@ -1,4 +1,5 @@
 import { LoginForm } from "@/components/auth/login-form"
+import "@/lib/debug" // 导入调试工具
 
 export default function LoginPage() {
   return (
