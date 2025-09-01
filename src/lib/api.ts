@@ -4,39 +4,20 @@ import { pb, type PBUser } from './pocketbase'
 const PORT = process.env.PORT || '3000'
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || `http://localhost:${PORT}/api`
 
-// 添加调试信息
-console.log('🔍 API 配置调试信息:')
-console.log('  - PORT:', process.env.PORT)
-console.log('  - NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL)
-console.log('  - NODE_ENV:', process.env.NODE_ENV)
-console.log('  - 最终使用的API URL:', API_BASE_URL)
-console.log('  - 当前时间:', new Date().toISOString())
-
 class ApiClient {
   private baseUrl: string
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl
-    console.log('🔍 ApiClient 初始化:')
-    console.log('  - baseUrl:', this.baseUrl)
   }
 
   // 检查PocketBase连接状态
   async checkPocketBaseConnection(): Promise<boolean> {
     try {
-      console.log('🔍 开始检查PocketBase连接状态...')
-      console.log('  - 检查时间:', new Date().toISOString())
-      console.log('  - PocketBase URL:', pb.baseUrl)
-      
-      const health = await pb.health.check()
-      console.log('✅ PocketBase连接检查成功:', health)
+      await pb.health.check()
       return true
-    } catch (error: unknown) {
-      console.error('❌ PocketBase连接检查失败:', error)
-      console.error('  - 错误类型:', error instanceof Error ? error.constructor?.name : typeof error)
-      console.error('  - 错误消息:', error instanceof Error ? error.message : String(error))
-      console.error('  - 错误详情:', error)
-      console.error('  - 失败时间:', new Date().toISOString())
+    } catch (error) {
+      console.error('PocketBase连接失败:', error)
       return false
     }
   }
@@ -92,71 +73,32 @@ class ApiClient {
 
   // 用户认证相关API
   async login(email: string, password: string): Promise<{ user: PBUser; token: string }> {
-    console.log('🔍 开始登录流程...')
-    console.log('  - 登录时间:', new Date().toISOString())
-    console.log('  - 用户邮箱:', email)
-    console.log('  - 密码长度:', password.length)
-    console.log('  - PocketBase URL:', pb.baseUrl)
-    console.log('  - API Base URL:', this.baseUrl)
-    
     try {
       // 检查连接状态
-      console.log('🔍 检查PocketBase连接状态...')
       const isConnected = await this.checkPocketBaseConnection()
       if (!isConnected) {
-        console.error('❌ PocketBase连接失败，无法进行登录')
         throw new Error('无法连接到数据库服务器')
       }
-      console.log('✅ PocketBase连接正常，继续登录流程')
 
-      console.log('🔍 开始PocketBase认证...')
-      console.log('  - 认证时间:', new Date().toISOString())
-      console.log('  - 目标集合: users')
-      console.log('  - 认证方法: authWithPassword')
-      
       const authData = await pb.collection('users').authWithPassword(email, password)
       
-      console.log('✅ PocketBase认证成功:')
-      console.log('  - 认证时间:', new Date().toISOString())
-      console.log('  - 用户ID:', authData.record?.id)
-      console.log('  - 用户邮箱:', authData.record?.email)
-      console.log('  - 用户名称:', authData.record?.name)
-      console.log('  - Token存在:', !!authData.token)
-      console.log('  - Token长度:', authData.token?.length || 0)
-      
       if (!authData.record) {
-        console.error('❌ 认证成功但用户记录为空')
         throw new Error('登录失败')
       }
 
-      const userData = {
-        id: authData.record.id,
-        email: authData.record.email,
-        name: authData.record.name || '',
-        avatar: authData.record.avatar || '',
-        created: authData.record.created,
-        updated: authData.record.updated,
-      }
-      
-      console.log('✅ 登录流程完成，返回用户数据:')
-      console.log('  - 完成时间:', new Date().toISOString())
-      console.log('  - 用户数据:', userData)
-      
       return {
-        user: userData,
+        user: {
+          id: authData.record.id,
+          email: authData.record.email,
+          name: authData.record.name || '',
+          avatar: authData.record.avatar || '',
+          created: authData.record.created,
+          updated: authData.record.updated,
+        },
         token: authData.token,
       }
-    } catch (error: unknown) {
-      console.error('❌ 登录流程失败:')
-      console.error('  - 失败时间:', new Date().toISOString())
-      console.error('  - 错误类型:', error instanceof Error ? error.constructor?.name : typeof error)
-      console.error('  - 错误消息:', error instanceof Error ? error.message : String(error))
-      console.error('  - 错误详情:', error)
-      console.error('  - PocketBase状态:', {
-        baseUrl: pb.baseUrl,
-        isConnected: pb.health ? 'health check available' : 'health check not available'
-      })
-      
+    } catch (error) {
+      console.error('登录错误:', error)
       if (error instanceof Error) {
         throw new Error(error.message)
       }
