@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai'
 import * as fs from 'node:fs'
 import fetch from 'node-fetch'
 import cosineSimilarity from 'compute-cosine-similarity'
+import {HttpsProxyAgent} from "https-proxy-agent";
 
 // ==============================================================================
 //  类型定义
@@ -980,6 +981,15 @@ export async function analyzeImage(imagePath: string, subject?: Subject): Promis
   console.log('🚀 开始题目分析流程...')
   
   try {
+    const proxy = "http://127.0.0.1:7890";
+    const agent = new HttpsProxyAgent(proxy);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const proxyFetch = (url: string, options: any) => {
+        return fetch(url, { ...options, agent });
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (global as any).fetch = proxyFetch;
+
     // 设置默认值
     const studyPhase = subject?.studyPhaseCode || "300"
     const subjectCode = subject?.subjectCode || "2"
