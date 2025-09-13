@@ -25,7 +25,13 @@ interface ProblemItem {
 }
 
 interface ProblemQueryResponse {
+  code: string
+  message: string
   data: {
+    pageNum: number
+    pageSize: number
+    totalPage: number
+    total: string
     list: ProblemItem[]
   }
 }
@@ -173,29 +179,33 @@ export async function queryStzyApi(knowledgePointId: string, studyPhase = "300",
     'token': 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJuaWNrTmFtZSI6IjE5OCoqKio1NzIyIiwiaWQiOiI1OTk1ODEwMjgxMDYzNzUxNjgiLCJleHAiOjE3NTI1MzUwOTAsInR5cGUiOiIxIiwiaWF0IjoxNzUyNTM1MDg5LCJqdGkiOiIxMmI3YzZjODUyZTk0OTFjYjY1YWZiMjk1Yjc2ZjhjYyIsImF1dGhvcml0aWVzIjpbXSwidXNlcm5hbWUiOiJzdHdfNTk5NTgxMDI4MTA2Mzc1MTY4In0.enBCCkVKFatlPUwC9-QIIVn_a6oOprnWHlZ8qL_zcu8BRfHwMuH5tOkySj4CE1FhLFNHT-6uBzPFABXfkoDIIRRCwoZv-RVNvCkf1F0-NuzrxeKlfnet4XT8GK4QKUe03j0pRgyS2GS2u8_57MhgOSBD9NLLZ91VfZ2mGLOGgLY'
   }
   
+  const basePayload = {
+    onlyCheckUrlAndMethod: true,
+    pageSize: 10,
+    params: {
+      studyPhaseCode: studyPhase,
+      subjectCode: subject,
+      searchType: 2,
+      sort: 0,
+      yearCode: "",
+      gradeCode: "",
+      provinceCode: "",
+      cityCode: "",
+      areaCode: "",
+      organizationCode: "",
+      termCode: "",
+      keyWord: "",
+      filterQuestionFlag: false,
+      searchScope: 0,
+      treeIds: [knowledgePointId]
+    }
+  }
+  
   try {
-    // 第一步：先获取总页数
+    // 第一次请求：获取总页数
     const initialPayload = {
-      onlyCheckUrlAndMethod: true,
-      pageNum: 0,
-      pageSize: 10,
-      params: {
-        studyPhaseCode: studyPhase,
-        subjectCode: subject,
-        searchType: 2,
-        sort: 0,
-        yearCode: "",
-        gradeCode: "",
-        provinceCode: "",
-        cityCode: "",
-        areaCode: "",
-        organizationCode: "",
-        termCode: "",
-        keyWord: "",
-        filterQuestionFlag: false,
-        searchScope: 0,
-        treeIds: [knowledgePointId]
-      }
+      ...basePayload,
+      pageNum: 1
     }
     
     const initialResponse = await fetch(url, {
@@ -208,46 +218,21 @@ export async function queryStzyApi(knowledgePointId: string, studyPhase = "300",
       throw new Error(`HTTP error! status: ${initialResponse.status}`)
     }
     
-    const initialData = await initialResponse.json() as ProblemQueryResponse & {
-      data: {
-        list: ProblemItem[]
-        totalPage: number
-      }
-    }
+    const initialResult = await initialResponse.json() as ProblemQueryResponse
+    const totalPage = initialResult.data.totalPage
     
-    // 获取总页数
-    const totalPage = initialData.data.totalPage || 1
-    
-    // 如果只有一页，直接返回第一次请求的结果
+    // 如果只有一页或没有数据，直接返回第一次的结果
     if (totalPage <= 1) {
-      return initialData
+      return initialResult
     }
     
-    // 第二步：生成随机页码（0到totalPage-1之间）
+    // 生成0到totalPage-1之间的随机页数
     const randomPageNum = Math.floor(Math.random() * totalPage)
     
-    // 第三步：使用随机页码重新请求
+    // 第二次请求：使用随机页数获取数据
     const randomPayload = {
-      onlyCheckUrlAndMethod: true,
-      pageNum: randomPageNum,
-      pageSize: 10,
-      params: {
-        studyPhaseCode: studyPhase,
-        subjectCode: subject,
-        searchType: 2,
-        sort: 0,
-        yearCode: "",
-        gradeCode: "",
-        provinceCode: "",
-        cityCode: "",
-        areaCode: "",
-        organizationCode: "",
-        termCode: "",
-        keyWord: "",
-        filterQuestionFlag: false,
-        searchScope: 0,
-        treeIds: [knowledgePointId]
-      }
+      ...basePayload,
+      pageNum: randomPageNum
     }
     
     const randomResponse = await fetch(url, {
@@ -260,10 +245,7 @@ export async function queryStzyApi(knowledgePointId: string, studyPhase = "300",
       throw new Error(`HTTP error! status: ${randomResponse.status}`)
     }
     
-    const randomData = await randomResponse.json() as ProblemQueryResponse
-    console.log(`使用随机页码 ${randomPageNum}/${totalPage-1} 查询题目`)
-    
-    return randomData
+    return await randomResponse.json() as ProblemQueryResponse
     
   } catch (error) {
     console.error('题目查询失败:', error)
