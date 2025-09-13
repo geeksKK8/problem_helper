@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
+
+import { ImageModal } from "@/components/ui/image-modal"
 import { 
   Combine, 
   ArrowUp, 
@@ -61,6 +62,8 @@ interface ImageMergerProps {
 export function ImageMerger({ croppedImages, onComplete, onBack }: ImageMergerProps) {
   const [mergeGroups, setMergeGroups] = useState<MergeGroup[]>([])
   const [availableImages, setAvailableImages] = useState<CroppedImage[]>(croppedImages)
+  const [selectedImage, setSelectedImage] = useState<CroppedImage | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   // 创建新的合并组
   const createMergeGroup = () => {
@@ -257,6 +260,18 @@ export function ImageMerger({ croppedImages, onComplete, onBack }: ImageMergerPr
     Promise.all(files).then(onComplete)
   }
 
+  // 打开图片预览模态框
+  const handleImageClick = (image: CroppedImage) => {
+    setSelectedImage(image)
+    setIsModalOpen(true)
+  }
+
+  // 关闭图片预览模态框
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setSelectedImage(null)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -296,7 +311,11 @@ export function ImageMerger({ croppedImages, onComplete, onBack }: ImageMergerPr
                   className="p-3 border rounded-lg bg-background"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 border rounded overflow-hidden flex-shrink-0">
+                    <div 
+                      className="w-16 h-16 border rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-primary transition-all"
+                      onClick={() => handleImageClick(image)}
+                      title="点击查看大图"
+                    >
                       <canvas
                         ref={(canvas) => {
                           if (canvas) {
@@ -371,7 +390,11 @@ export function ImageMerger({ croppedImages, onComplete, onBack }: ImageMergerPr
                       className="p-2 border rounded bg-background"
                     >
                       <div className="flex items-center gap-2">
-                        <div className="w-12 h-12 border rounded overflow-hidden flex-shrink-0">
+                        <div 
+                          className="w-12 h-12 border rounded overflow-hidden flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-primary transition-all"
+                          onClick={() => handleImageClick(image)}
+                          title="点击查看大图"
+                        >
                           <canvas
                             ref={(canvas) => {
                               if (canvas) {
@@ -440,7 +463,25 @@ export function ImageMerger({ croppedImages, onComplete, onBack }: ImageMergerPr
                     <Label className="text-xs text-muted-foreground">
                       {group.images.length > 1 ? '合并预览:' : '图片预览:'}
                     </Label>
-                    <div className="mt-1 max-w-[200px] border rounded overflow-hidden">
+                    <div 
+                      className="mt-1 max-w-[200px] border rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all"
+                      onClick={() => {
+                        if (group.images.length > 0) {
+                          // 为合并预览创建一个临时的CroppedImage对象
+                          mergeImagesVertically(group.images).then(mergedCanvas => {
+                            const tempImage: CroppedImage = {
+                              id: `merged-${group.id}`,
+                              canvas: mergedCanvas,
+                              subject: group.subject,
+                              originalFile: group.images[0].originalFile,
+                              cropArea: group.images[0].cropArea
+                            }
+                            handleImageClick(tempImage)
+                          })
+                        }
+                      }}
+                      title="点击查看大图"
+                    >
                       <canvas
                         ref={(canvas) => {
                           if (canvas) {
@@ -496,6 +537,14 @@ export function ImageMerger({ croppedImages, onComplete, onBack }: ImageMergerPr
           <p>• 如果不需要合并，可以直接跳过此步骤</p>
         </CardContent>
       </Card>
+
+      {/* 图片预览模态框 */}
+      <ImageModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        canvas={selectedImage?.canvas}
+        title={selectedImage ? `区域预览 - ${selectedImage.subject.category} ${selectedImage.subject.name}` : undefined}
+      />
     </div>
   )
 } 
