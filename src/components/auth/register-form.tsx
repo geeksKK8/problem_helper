@@ -27,8 +27,8 @@ import { useRouter } from "next/navigation"
 const registerSchema = z.object({
   name: z.string().min(2, "用户名至少2个字符").max(50, "用户名不能超过50个字符"),
   email: z.string().email("请输入有效的邮箱地址"),
-  password: z.string().min(6, "密码至少6位").max(50, "密码不能超过50位"),
-  passwordConfirm: z.string().min(6, "请确认密码"),
+  password: z.string().min(8, "密码至少8位").max(50, "密码不能超过50位"),
+  passwordConfirm: z.string().min(8, "请确认密码"),
   agree: z.boolean().refine((val) => val === true, "请同意服务条款"),
 }).refine((data) => data.password === data.passwordConfirm, {
   message: "两次输入的密码不一致",
