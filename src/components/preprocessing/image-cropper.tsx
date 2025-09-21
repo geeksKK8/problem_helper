@@ -73,6 +73,9 @@ export function ImageCropper({
   // 新增：图片缩放控制状态
   const [userScale, setUserScale] = useState(1) // 用户自定义缩放比例
   const [originalImageScale, setOriginalImageScale] = useState(1) // 原始适配缩放比例
+  
+  // 新增：固定起始点状态
+  const [drawStartPoint, setDrawStartPoint] = useState<{ x: number, y: number } | null>(null)
 
   // 当图片URL改变时重置剪裁区域
   useEffect(() => {
@@ -85,6 +88,7 @@ export function ImageCropper({
     setResizeHandle(null)
     setResizeStartArea(null)
     setUserScale(1) // 重置用户缩放比例
+    setDrawStartPoint(null) // 重置起始点
   }, [imageUrl])
 
   // 初始化画布
@@ -301,6 +305,7 @@ export function ImageCropper({
       setIsResizing(false)
       setResizeHandle(null)
       setResizeStartArea(null)
+      setDrawStartPoint({ x: pos.x, y: pos.y }) // 记录固定起始点
       setCurrentArea({
         id: `area-${Date.now()}`,
         x: pos.x,
@@ -336,12 +341,24 @@ export function ImageCropper({
       }
     }
     
-    if (isDrawing && currentArea) {
-      setCurrentArea(prev => prev ? {
-        ...prev,
-        width: Math.abs(pos.x - prev.x!),
-        height: Math.abs(pos.y - prev.y!)
-      } : null)
+    if (isDrawing && currentArea && drawStartPoint) {
+      setCurrentArea(prev => {
+        if (!prev) return null
+        
+        // 使用固定的起始点计算裁剪框的位置和尺寸
+        const startX = Math.min(drawStartPoint.x, pos.x)
+        const startY = Math.min(drawStartPoint.y, pos.y)
+        const endX = Math.max(drawStartPoint.x, pos.x)
+        const endY = Math.max(drawStartPoint.y, pos.y)
+        
+        return {
+          ...prev,
+          x: startX,
+          y: startY,
+          width: endX - startX,
+          height: endY - startY
+        }
+      })
     } else if (isDragging && selectedAreaId) {
       setCropAreas(prev => prev.map(area => 
         area.id === selectedAreaId ? {
@@ -411,6 +428,7 @@ export function ImageCropper({
     setResizeHandle(null)
     setResizeStartArea(null)
     setCurrentArea(null)
+    setDrawStartPoint(null) // 清理起始点
   }
 
 
