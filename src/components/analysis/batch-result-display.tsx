@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { Eye, Download, Save, X, ChevronUp } from "lucide-react"
+import { Eye, Download, Save, X, ChevronUp, Sparkles } from "lucide-react"
 import { ProblemDisplay } from "@/components/problems/problem-display"
 import type { Problem } from "@/types"
 
@@ -29,9 +29,10 @@ interface BatchResultDisplayProps {
   results: BatchResult[]
   onClear: () => void
   onExport: () => void
+  onGenerateSolution?: (file: File, knowledgePoint: string, subject: BatchResult['subject']) => void
 }
 
-export function BatchResultDisplay({ results, onClear, onExport }: BatchResultDisplayProps) {
+export function BatchResultDisplay({ results, onClear, onExport, onGenerateSolution }: BatchResultDisplayProps) {
   const router = useRouter()
   const [expandedResults, setExpandedResults] = useState<Set<number>>(new Set())
 
@@ -90,6 +91,19 @@ export function BatchResultDisplay({ results, onClear, onExport }: BatchResultDi
                     </Badge>
                   </div>
                   <div className="flex gap-2">
+                    {onGenerateSolution && (
+                      <Button 
+                        size="sm" 
+                        variant="default"
+                        className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                        onClick={() => {
+                          onGenerateSolution(result.file, result.result.knowledgePoint, result.subject)
+                        }}
+                      >
+                        <Sparkles className="h-4 w-4 mr-1" />
+                        生成解答
+                      </Button>
+                    )}
                     <Button 
                       size="sm" 
                       variant="outline"

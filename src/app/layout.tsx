@@ -3,6 +3,8 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/sonner"
 import { AuthProvider } from "@/lib/auth-context"
+import { CopilotKit } from "@copilotkit/react-core"; 
+import "@copilotkit/react-ui/styles.css";
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -19,10 +21,12 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className={inter.className}>
-        <AuthProvider>
-          {children}
-          <Toaster />
-        </AuthProvider>
+        <CopilotKit runtimeUrl="/api/copilotkit">
+          <AuthProvider>
+            {children}
+            <Toaster />
+          </AuthProvider>
+        </CopilotKit>
       </body>
     </html>
   )

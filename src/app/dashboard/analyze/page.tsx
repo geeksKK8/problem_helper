@@ -5,7 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BatchUploadZone } from "@/components/upload/batch-upload-zone"
 import { BatchResultDisplay } from "@/components/analysis/batch-result-display"
 import { ImagePreprocessor } from "@/components/preprocessing/image-preprocessor"
-
+import { CopilotSidebar } from "@copilotkit/react-ui"
+import { useCopilotAction, useCopilotReadable } from "@copilotkit/react-core"
+import { apiClient } from "@/lib/api"
 import { toast } from "sonner"
 
 import type { Problem } from "@/types"
@@ -47,9 +49,89 @@ export default function AnalyzePage() {
   const [batchResults, setBatchResults] = useState<Array<{ file: File; result: { knowledgePoint: string; problems: Problem[]; historyId?: string | null }; subject: Subject }>>([])
   const [activeTab, setActiveTab] = useState("preprocessing")
   const [preprocessedImages, setPreprocessedImages] = useState<File[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [currentProblemContext, setCurrentProblemContext] = useState<{
+    imagePath?: string
+    knowledgePoint?: string
+    subject?: Subject
+    solutionSteps?: Array<{
+      step: number
+      title: string
+      content: string
+      formula?: string
+    }>
+  }>({})
 
+  // 让 AI 知道当前正在处理的题目上下文
+  useCopilotReadable({
+    description: "当前题目分析的上下文信息",
+    value: currentProblemContext
+  })
 
+  // 注册生成解答的 action
+  useCopilotAction({
+    name: "generateSolution",
+    description: "为指定的题目生成详细的解题过程",
+    parameters: [
+      {
+        name: "imagePath",
+        type: "string",
+        description: "题目图片的路径",
+        required: true
+      },
+      {
+        name: "subject",
+        type: "object",
+        description: "题目所属科目",
+        required: false
+      }
+    ],
+    handler: async ({ imagePath, subject }) => {
+      try {
+        // 调用 API 生成解答
+        const response = await fetch('/api/analysis/generate-solution', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ imagePath, subject }),
+        })
 
+        if (!response.ok) {
+          throw new Error('解答生成失败')
+        }
+
+        const data = await response.json()
+        
+        if (data.success && data.data?.solutionSteps) {
+          const steps = data.data.solutionSteps
+          
+          // 构造格式化的解答文本
+          let solutionText = "## 📝 解题过程\n\n"
+          
+          if (data.data.knowledgePoint) {
+            solutionText += `**知识点**: ${data.data.knowledgePoint}\n\n`
+          }
+          
+          steps.forEach((step: { step: number; title: string; content: string; formula?: string }) => {
+            solutionText += `### 步骤 ${step.step}: ${step.title}\n\n`
+            solutionText += `${step.content}\n\n`
+            
+            if (step.formula) {
+              solutionText += `**公式**: \`${step.formula}\`\n\n`
+            }
+          })
+          
+          return solutionText
+        }
+        
+        return "解答生成完成，但未能提取到有效内容。"
+      } catch (error) {
+        console.error('生成解答失败:', error)
+        return "抱歉，生成解答时遇到了问题。请稍后再试。"
+      }
+    }
+  })
 
 
 
@@ -58,7 +140,119 @@ export default function AnalyzePage() {
     toast.success(`批量分析完成！共处理 ${results.length} 个文件`)
   }
 
+  // 处理生成解答请求
+  const handleGenerateSolution = async (file: File, knowledgePoint: string, subject: Subject) => {
+    try {
+      // 显示加载提示
+      toast.loading("正在上传图片...", { id: "generate-solution" })
+      
+      // 先上传图片
+      const uploadResult = await apiClient.uploadImage(file)
+      if (!uploadResult.success || !uploadResult.data?.id) {
+        throw new Error('图片上传失败')
+      }
+      
+      toast.loading("正在生成解答...", { id: "generate-solution" })
+      
+      // 设置当前题目上下文
+      setCurrentProblemContext({
+        imagePath: uploadResult.data.id, 
+        knowledgePoint,
+        subject
+      })
+      
+      // 调用生成解答 API
+      const response = await fetch('/api/analysis/generate-solution', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          imagePath: uploadResult.data.id, 
+          subject 
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('解答生成失败')
+      }
+
+      const data = await response.json()
+      
+      // 打开 sidebar 并显示结果
+      setSidebarOpen(true)
+      
+      if (data.success && data.data?.solutionSteps) {
+        toast.success("解答已生成！请在侧边栏查看详细内容", { id: "generate-solution" })
+        
+        // 存储生成的解答，用于 CopilotKit 上下文
+        setCurrentProblemContext(prev => ({
+          ...prev,
+          solutionSteps: data.data.solutionSteps
+        }))
+      } else {
+        toast.error("解答生成完成，但未能提取到有效内容", { id: "generate-solution" })
+      }
+      
+    } catch (error) {
+      console.error('生成解答失败:', error)
+      toast.error("生成解答失败，请重试", { id: "generate-solution" })
+    }
+  }
+
+  // 构建 sidebar 的初始消息
+  const getSidebarInitialMessage = () => {
+    if (!currentProblemContext.solutionSteps || currentProblemContext.solutionSteps.length === 0) {
+      return "你好！我可以帮你解答题目相关的问题。请点击题目旁边的'生成解答'按钮开始。"
+    }
+
+    let message = `## 📝 解题过程\n\n`
+    
+    if (currentProblemContext.knowledgePoint) {
+      message += `**知识点**: ${currentProblemContext.knowledgePoint}\n\n`
+    }
+    
+    currentProblemContext.solutionSteps.forEach((step) => {
+      message += `### 步骤 ${step.step}: ${step.title}\n\n`
+      message += `${step.content}\n\n`
+      
+      if (step.formula) {
+        message += `**公式**: \`${step.formula}\`\n\n`
+      }
+      
+      message += `---\n\n`
+    })
+    
+    message += `\n\n你可以继续提问，我会帮你解释任何不清楚的地方！`
+    
+    return message
+  }
+
   return (
+    <CopilotSidebar
+      key={currentProblemContext.imagePath || 'default'}
+      defaultOpen={sidebarOpen}
+      instructions={`你是一个专业的教育助手，专门帮助学生解答题目。
+
+${currentProblemContext.knowledgePoint ? `当前题目信息：
+- 知识点: ${currentProblemContext.knowledgePoint}
+- 科目: ${currentProblemContext.subject ? `${currentProblemContext.subject.category} - ${currentProblemContext.subject.name}` : '未知'}
+` : ''}
+
+请根据学生的问题提供：
+1. 详细的解题思路和步骤
+2. 相关知识点的清晰解释
+3. 解题技巧和注意事项
+4. 举一反三的练习建议
+
+使用清晰、友好、鼓励的语言，帮助学生理解和掌握解题方法。`}
+      labels={{
+        title: "解题助手",
+        initial: getSidebarInitialMessage(),
+        placeholder: "有什么不明白的地方吗？尽管问我..."
+      }}
+      clickOutsideToClose={false}
+    >
     <div className="space-y-6">
       {/* 页面标题 */}
       <div>
@@ -118,8 +312,10 @@ export default function AnalyzePage() {
             // TODO: 实现导出功能
             console.log('导出批量分析结果')
           }}
+          onGenerateSolution={handleGenerateSolution}
         />
       )}
     </div>
+    </CopilotSidebar>
   )
 } 
